@@ -45,20 +45,79 @@ export interface TextElement extends ElementBase {
 
 /*
  * ---------------------------------------------------------------------------
- * Reserved kinds -- NOT implemented in the MVP.
+ * Drawing elements.
  *
- * Their payloads are intentionally minimal. Do not flesh these out
- * speculatively. In particular `barcode` and `qr` are placeholders: barcode
- * *management* tooling is still being designed, and a barcode may end up
- * referencing a managed entity rather than carrying a raw value. Reserving the
- * kind costs nothing; guessing the payload costs a migration.
+ * Everything is 1-bit: there is no colour and no grey. A shape is either
+ * outlined at some stroke width, filled solid black, or both. That constraint
+ * is why these payloads are so small.
+ * ---------------------------------------------------------------------------
+ */
+
+export interface StrokedElement extends ElementBase {
+  /** Outline thickness in device pixels. 0 means no outline. */
+  strokeWidthPx: number;
+}
+
+export interface RectElement extends StrokedElement {
+  kind: "rect";
+  filled: boolean;
+  cornerRadiusPx: number;
+}
+
+export interface EllipseElement extends StrokedElement {
+  kind: "ellipse";
+  filled: boolean;
+}
+
+/**
+ * Line, arrow, and freehand all reduce to a polyline.
+ *
+ * Points are NORMALISED to 0..1 within the element's box, as flat [x, y, x, y,
+ * ...] pairs. Normalising means resizing the box scales the path with it for
+ * free, and it keeps the geometry independent of the label's DPI.
+ */
+export interface PolylineElement extends StrokedElement {
+  kind: "line" | "arrow" | "freehand";
+  points: readonly number[];
+  /** Arrowhead length in device pixels. Ignored unless kind is "arrow". */
+  arrowHeadPx: number;
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * Reserved kinds -- still NOT implemented.
+ *
+ * Payloads are intentionally absent. Do not flesh these out speculatively. In
+ * particular `barcode` and `qr` are placeholders: barcode *management* tooling
+ * is still being designed, and a barcode may end up referencing a managed
+ * entity rather than carrying a raw value. Reserving the kind costs nothing;
+ * guessing the payload costs a migration.
  * ---------------------------------------------------------------------------
  */
 export interface ReservedElement extends ElementBase {
-  kind: "rect" | "ellipse" | "line" | "arrow" | "freehand" | "image" | "barcode" | "qr";
+  kind: "image" | "barcode" | "qr";
 }
 
-export type Element = TextElement | ReservedElement;
+export type Element =
+  | TextElement
+  | RectElement
+  | EllipseElement
+  | PolylineElement
+  | ReservedElement;
+
+export type ShapeElement = RectElement | EllipseElement | PolylineElement;
+
+export function isShapeElement(el: Element): el is ShapeElement {
+  return el.kind === "rect" || el.kind === "ellipse" || isPolylineElement(el);
+}
+
+export function isPolylineElement(el: Element): el is PolylineElement {
+  return el.kind === "line" || el.kind === "arrow" || el.kind === "freehand";
+}
+
+export function isFilledShape(el: Element): el is RectElement | EllipseElement {
+  return el.kind === "rect" || el.kind === "ellipse";
+}
 
 export type ElementKind = Element["kind"];
 

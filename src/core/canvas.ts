@@ -22,6 +22,10 @@
 /** The subset of CanvasRenderingContext2D the rasterizer relies on. */
 export interface Ctx2D {
   fillStyle: string;
+  strokeStyle: string;
+  lineWidth: number;
+  lineCap: CanvasLineCap;
+  lineJoin: CanvasLineJoin;
   font: string;
   textAlign: CanvasTextAlign;
   textBaseline: CanvasTextBaseline;
@@ -33,6 +37,25 @@ export interface Ctx2D {
   fillText(text: string, x: number, y: number): void;
   measureText(text: string): { width: number };
   getImageData(x: number, y: number, w: number, h: number): { data: Uint8ClampedArray };
+
+  // Path construction, for shapes.
+  beginPath(): void;
+  closePath(): void;
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void;
+  ellipse(
+    x: number,
+    y: number,
+    radiusX: number,
+    radiusY: number,
+    rotation: number,
+    startAngle: number,
+    endAngle: number,
+  ): void;
+  rect(x: number, y: number, w: number, h: number): void;
+  fill(): void;
+  stroke(): void;
 }
 
 export interface CanvasLike {
