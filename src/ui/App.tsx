@@ -40,6 +40,8 @@ import { LibraryPanel } from "./LibraryPanel.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
 import { InlineTextEditor } from "./InlineTextEditor.tsx";
 import { useElementSize } from "./useElementSize.ts";
+import { useDisplayUnit } from "./useDisplayUnit.ts";
+import { DISPLAY_UNITS, type DisplayUnit } from "../core/units.ts";
 
 /** Breathing room around the label inside the stage area, in CSS pixels. */
 const CANVAS_MARGIN = 48;
@@ -89,6 +91,7 @@ export function App() {
   const [tool, setTool] = useState<Tool>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  const [unit, setUnit] = useDisplayUnit();
   const [library, setLibrary] = useState<Library>(() => loadLibrary());
 
   /*
@@ -286,6 +289,20 @@ export function App() {
             {LABEL_SIZES.map((size) => (
               <option key={size.id} value={size.id}>
                 {size.label}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor="unit">Units</label>
+          <select
+            id="unit"
+            value={unit}
+            onChange={(event) => setUnit(event.target.value as DisplayUnit)}
+            title="Unit used for positions and sizes"
+          >
+            {DISPLAY_UNITS.map((u) => (
+              <option key={u} value={u}>
+                {u}
               </option>
             ))}
           </select>
@@ -505,11 +522,11 @@ export function App() {
           {selectedElements.length > 1 ? (
             <MultiInspector elements={selectedElements} dispatch={dispatch} />
           ) : selected && isTextElement(selected) ? (
-            <Inspector element={selected} dispatch={dispatch} />
+            <Inspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
           ) : selected && isShapeElement(selected) ? (
-            <ShapeInspector element={selected} dispatch={dispatch} />
+            <ShapeInspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
           ) : selected && isImageElement(selected) ? (
-            <ImageInspector element={selected} dispatch={dispatch} />
+            <ImageInspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
           ) : (
             <div className="empty">
               <p>Nothing selected.</p>

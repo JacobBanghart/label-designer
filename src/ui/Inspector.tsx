@@ -7,9 +7,13 @@
 
 import type { TextAlign, TextElement, VerticalAlign } from "../core/document.ts";
 import type { EditorAction } from "../editor/store.ts";
+import { pxToPt, ptToPx, type DisplayUnit } from "../core/units.ts";
+import { GeometryFields } from "./GeometryFields.tsx";
 
 interface Props {
   element: TextElement;
+  unit: DisplayUnit;
+  dpi: number;
   dispatch: (action: EditorAction) => void;
 }
 
@@ -21,7 +25,7 @@ const VERTICAL: { value: VerticalAlign; label: string }[] = [
   { value: "bottom", label: "Bottom" },
 ];
 
-export function Inspector({ element, dispatch }: Props) {
+export function Inspector({ element, unit, dpi, dispatch }: Props) {
   const update = (patch: Partial<TextElement>, transient = false) =>
     dispatch({ type: "update", id: element.id, patch, transient });
 
@@ -39,15 +43,23 @@ export function Inspector({ element, dispatch }: Props) {
         />
       </label>
 
+      <GeometryFields element={element} unit={unit} dpi={dpi} dispatch={dispatch} />
+
       <div className="field-row">
         <label className="field">
-          <span>Size (px)</span>
+          {/* Points, not device pixels: type is universally specified in pt,
+              and "62px" is meaningless without knowing the DPI. */}
+          <span>Size (pt)</span>
           <input
             type="number"
-            min={8}
-            max={400}
-            value={element.fontSizePx}
-            onChange={(event) => update({ fontSizePx: Number(event.target.value) || 8 })}
+            min={2}
+            max={200}
+            step={0.5}
+            value={Number(pxToPt(element.fontSizePx, dpi).toFixed(1))}
+            onChange={(event) => {
+              const pt = Number(event.target.value);
+              if (Number.isFinite(pt)) update({ fontSizePx: Math.max(4, ptToPx(pt, dpi)) });
+            }}
           />
         </label>
 

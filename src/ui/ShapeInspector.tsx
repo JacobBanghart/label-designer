@@ -8,9 +8,13 @@
 
 import { isFilledShape, isPolylineElement, type ShapeElement } from "../core/document.ts";
 import type { EditorAction } from "../editor/store.ts";
+import type { DisplayUnit } from "../core/units.ts";
+import { GeometryFields } from "./GeometryFields.tsx";
 
 interface Props {
   element: ShapeElement;
+  unit: DisplayUnit;
+  dpi: number;
   dispatch: (action: EditorAction) => void;
 }
 
@@ -22,13 +26,15 @@ const LABELS: Record<ShapeElement["kind"], string> = {
   freehand: "Freehand",
 };
 
-export function ShapeInspector({ element, dispatch }: Props) {
+export function ShapeInspector({ element, unit, dpi, dispatch }: Props) {
   const update = (patch: Partial<ShapeElement>) =>
     dispatch({ type: "update", id: element.id, patch });
 
   return (
     <div className="inspector">
       <h2>{LABELS[element.kind]}</h2>
+
+      <GeometryFields element={element} unit={unit} dpi={dpi} dispatch={dispatch} />
 
       <div className="field-row">
         <label className="field">

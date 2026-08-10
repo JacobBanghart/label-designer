@@ -65,6 +65,16 @@ Barcode support is **deliberately** deferred rather than merely missing --
 barcode management is a design question in its own right, and guessing at it
 now would mean a migration later.
 
+### Units and precision
+
+Positions and sizes can be typed directly in the inspector, in inches,
+millimetres, or device pixels — pick with the Units control in the toolbar.
+Font sizes are in points, as type conventionally is.
+
+Geometry is always _stored_ in device pixels at the label's DPI, and converted
+only for display, so switching units never rewrites your document or
+accumulates rounding drift.
+
 ### Keyboard
 
 | Key                               | Action                    |

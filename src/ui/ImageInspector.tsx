@@ -8,9 +8,13 @@
 
 import type { HalftoneMode, ImageElement } from "../core/document.ts";
 import type { EditorAction } from "../editor/store.ts";
+import type { DisplayUnit } from "../core/units.ts";
+import { GeometryFields } from "./GeometryFields.tsx";
 
 interface Props {
   element: ImageElement;
+  unit: DisplayUnit;
+  dpi: number;
   dispatch: (action: EditorAction) => void;
 }
 
@@ -19,7 +23,7 @@ const MODES: { mode: HalftoneMode; label: string; hint: string }[] = [
   { mode: "dither", label: "Photo", hint: "Dithered grey simulation. Best for photographs." },
 ];
 
-export function ImageInspector({ element, dispatch }: Props) {
+export function ImageInspector({ element, unit, dpi, dispatch }: Props) {
   const update = (patch: Partial<ImageElement>) =>
     dispatch({ type: "update", id: element.id, patch });
 
@@ -28,6 +32,8 @@ export function ImageInspector({ element, dispatch }: Props) {
   return (
     <div className="inspector">
       <h2>Image</h2>
+
+      <GeometryFields element={element} unit={unit} dpi={dpi} dispatch={dispatch} />
 
       <div className="field">
         <span>Rendering</span>
