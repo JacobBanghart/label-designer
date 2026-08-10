@@ -9,9 +9,12 @@ import { downloadJson, importJson, load, save } from "../storage/local.ts";
 import { Inspector } from "./Inspector.tsx";
 import { LabelCanvas } from "./LabelCanvas.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
+import { useElementSize } from "./useElementSize.ts";
 
-/** Available height for the canvas, minus chrome. Keeps the label fully visible. */
-const CANVAS_VIEWPORT = { width: 560, height: 640 };
+/** Breathing room around the label inside the stage area, in CSS pixels. */
+const CANVAS_MARGIN = 48;
+/** Used for the first paint, before the ResizeObserver has measured. */
+const FALLBACK_SCALE = 0.4;
 
 export function App() {
   /*
@@ -29,6 +32,7 @@ export function App() {
   const [status, setStatus] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [stageRef, stageSize] = useElementSize<HTMLElement>();
 
   // Autosave. Safe to run unconditionally only because the editor is seeded
   // from storage during initialisation (see useEditor call above) -- there is
@@ -38,9 +42,14 @@ export function App() {
   }, [doc]);
 
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
+
+  // Fit the label to whatever room the stage area has, leaving a margin. Capped
+  // at 1:1 so a small label on a big screen is not blown up past its real
+  // resolution, which would just show interpolation artefacts.
   const scale = Math.min(
-    CANVAS_VIEWPORT.width / geometry.widthPx,
-    CANVAS_VIEWPORT.height / geometry.heightPx,
+    1,
+    stageSize.width > 0 ? (stageSize.width - CANVAS_MARGIN) / geometry.widthPx : FALLBACK_SCALE,
+    stageSize.height > 0 ? (stageSize.height - CANVAS_MARGIN) / geometry.heightPx : FALLBACK_SCALE,
   );
 
   const handlePrint = useCallback(async () => {
@@ -161,7 +170,7 @@ export function App() {
       </header>
 
       <div className="body">
-        <main className="stage-area">
+        <main className="stage-area" ref={stageRef}>
           <div className="stage-meta">
             {geometry.widthIn}&Prime; &times; {geometry.heightIn}&Prime; &middot; {geometry.widthPx}{" "}
             &times; {geometry.heightPx} px @ {doc.dpi} DPI

@@ -5,7 +5,7 @@
  * surface is one document plus a selected id.
  */
 
-import { useCallback, useEffect, useMemo, useReducer } from "react";
+import { useEffect, useMemo, useReducer } from "react";
 
 import type { Element, LabelDocument } from "../core/document.ts";
 import type { LabelSizeId, Orientation } from "../core/label.ts";
@@ -23,6 +23,7 @@ import {
   addElement,
   createDocument,
   createTextElement,
+  nextId,
   removeElement,
   reorderElement,
   renameDocument,
@@ -46,6 +47,8 @@ export type EditorAction =
   | { type: "setOrientation"; orientation: Orientation }
   | { type: "rename"; name: string }
   | { type: "select"; id: string | null }
+  | { type: "duplicate"; id: string }
+  | { type: "nudge"; id: string; dx: number; dy: number }
   | { type: "beginGesture" }
   | { type: "undo" }
   | { type: "redo" };
@@ -99,6 +102,24 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
     case "select":
       return { ...state, selectedId: action.id };
 
+    case "duplicate": {
+      const source = doc.elements.find((el) => el.id === action.id);
+      if (!source) return state;
+      // Offset slightly so the copy is visibly distinct from its original.
+      const copy = { ...source, id: nextId(source.kind), x: source.x + 16, y: source.y + 16 };
+      return { history: push(state.history, addElement(doc, copy)), selectedId: copy.id };
+    }
+
+    case "nudge": {
+      const element = doc.elements.find((el) => el.id === action.id);
+      if (!element) return state;
+      const next = updateElement(doc, action.id, {
+        x: element.x + action.dx,
+        y: element.y + action.dy,
+      });
+      return { ...state, history: push(state.history, next) };
+    }
+
     // Snapshots the current document so the gesture that follows is one undo
     // step. Subsequent updates during the gesture pass transient: true.
     case "beginGesture":
@@ -135,31 +156,69 @@ export function useEditor(initial?: LabelDocument) {
     [doc, state.selectedId],
   );
 
-  const handleUndo = useCallback(() => dispatch({ type: "undo" }), []);
-  const handleRedo = useCallback(() => dispatch({ type: "redo" }), []);
+  const selectedId = state.selectedId;
 
-  // Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z (or Ctrl+Y). Ignored while typing in a
-  // field, where the browser's own undo should win.
+  /**
+   * Keyboard shortcuts.
+   *
+   * All of them defer to form fields: while the caret is in a text box the
+   * browser's own editing behaviour must win, or typing "d" in a label would
+   * duplicate an element and Backspace would delete one.
+   */
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      if (!(event.metaKey || event.ctrlKey)) return;
+      if (target?.isContentEditable) return;
 
       const key = event.key.toLowerCase();
-      if (key === "z") {
+      const modified = event.metaKey || event.ctrlKey;
+
+      if (modified) {
+        if (key === "z") {
+          event.preventDefault();
+          dispatch({ type: event.shiftKey ? "redo" : "undo" });
+        } else if (key === "y") {
+          event.preventDefault();
+          dispatch({ type: "redo" });
+        } else if (key === "d" && selectedId) {
+          event.preventDefault();
+          dispatch({ type: "duplicate", id: selectedId });
+        }
+        return;
+      }
+
+      if (key === "escape") {
+        dispatch({ type: "select", id: null });
+        return;
+      }
+
+      if (!selectedId) return;
+
+      if (key === "delete" || key === "backspace") {
         event.preventDefault();
-        if (event.shiftKey) handleRedo();
-        else handleUndo();
-      } else if (key === "y") {
+        dispatch({ type: "remove", id: selectedId });
+        return;
+      }
+
+      // Arrow keys nudge by one device pixel; Shift jumps by ten.
+      const step = event.shiftKey ? 10 : 1;
+      const deltas: Record<string, [number, number]> = {
+        arrowleft: [-step, 0],
+        arrowright: [step, 0],
+        arrowup: [0, -step],
+        arrowdown: [0, step],
+      };
+      const delta = deltas[key];
+      if (delta) {
         event.preventDefault();
-        handleRedo();
+        dispatch({ type: "nudge", id: selectedId, dx: delta[0], dy: delta[1] });
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleUndo, handleRedo]);
+  }, [selectedId]);
 
   return {
     doc,

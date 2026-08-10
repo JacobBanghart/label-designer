@@ -44,10 +44,32 @@ export function unalignedRaster(): MonoRaster {
 
 /**
  * The reference document: the Simic Systems order label. A 4x6 portrait label
- * carrying rotated text, which is the label actually printed today. The MVP is
- * complete when this round-trips from editor to paper.
+ * (812 x 1218 px) carrying text rotated 90 degrees, which is the label actually
+ * printed today. The MVP is complete when this round-trips from editor to paper.
+ *
+ * GEOMETRY NOTE, because this is easy to get wrong: rotation is about the
+ * element's CENTRE, and the stored box stays axis-aligned. So a box that is
+ * 1000 wide and 180 tall, rotated 90 degrees, occupies a footprint 180 wide and
+ * 1000 tall centred on the same point. To place a vertical text column you
+ * therefore describe a HORIZONTAL box and rotate it -- and its stored x may sit
+ * outside the label even though the rotated result is fully inside.
+ *
+ *   visual centre = (x + widthPx/2, y + heightPx/2)
+ *
+ * Both columns share a vertical centre of 609 (half of 1218) and are offset
+ * horizontally from each other.
  */
 export function simicOrderLabel(): LabelDocument {
+  const columnWidth = 1000; // length of the text run, along the box's x axis
+  const columnHeight = 190; // thickness of the column once rotated
+  const verticalCentre = 1218 / 2;
+
+  /** Convert a desired on-label visual centre into a stored top-left. */
+  const place = (centreX: number) => ({
+    x: Math.round(centreX - columnWidth / 2),
+    y: Math.round(verticalCentre - columnHeight / 2),
+  });
+
   return {
     schemaVersion: SCHEMA_VERSION,
     id: "fixture-simic-order",
@@ -59,10 +81,9 @@ export function simicOrderLabel(): LabelDocument {
       {
         id: "el-company",
         kind: "text",
-        x: 120,
-        y: 80,
-        widthPx: 180,
-        heightPx: 900,
+        ...place(620),
+        widthPx: columnWidth,
+        heightPx: columnHeight,
         rotation: 90,
         text: "Simic Systems LLC",
         fontSizePx: 96,
@@ -74,10 +95,9 @@ export function simicOrderLabel(): LabelDocument {
       {
         id: "el-order",
         kind: "text",
-        x: 320,
-        y: 80,
-        widthPx: 160,
-        heightPx: 900,
+        ...place(400),
+        widthPx: columnWidth,
+        heightPx: columnHeight,
         rotation: 90,
         text: "Order Number: 20250903ku6pmv",
         fontSizePx: 72,
