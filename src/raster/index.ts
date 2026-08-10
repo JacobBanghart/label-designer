@@ -66,6 +66,33 @@ function buildFont(el: TextElement): string {
   return parts.join(" ");
 }
 
+/**
+ * Break a single token that is too wide for the box into character-wrapped
+ * chunks.
+ *
+ * Letting an over-wide word overflow would push it off the label, and anything
+ * past the edge is simply not printed -- a silent data loss on something like an
+ * order number. Breaking mid-token is ugly but visible. This also matches how
+ * Konva lays out text in the editor, which keeps the canvas WYSIWYG.
+ */
+function breakLongWord(ctx: Ctx2D, word: string, maxWidth: number): string[] {
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const char of word) {
+    const candidate = current + char;
+    if (current !== "" && ctx.measureText(candidate).width > maxWidth) {
+      chunks.push(current);
+      current = char;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current !== "") chunks.push(current);
+
+  return chunks;
+}
+
 /** Wrap `text` into lines that fit within `maxWidth`, measured via `ctx`. */
 function wrapText(ctx: Ctx2D, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
@@ -79,15 +106,23 @@ function wrapText(ctx: Ctx2D, text: string, maxWidth: number): string[] {
       continue;
     }
 
-    let current = words[0]!;
-    for (let i = 1; i < words.length; i++) {
-      const word = words[i]!;
-      const candidate = `${current} ${word}`;
+    let current = "";
+    for (const word of words) {
+      const candidate = current === "" ? word : `${current} ${word}`;
       if (ctx.measureText(candidate).width <= maxWidth) {
         current = candidate;
-      } else {
-        lines.push(current);
+        continue;
+      }
+
+      if (current !== "") lines.push(current);
+
+      if (ctx.measureText(word).width <= maxWidth) {
         current = word;
+      } else {
+        // Too wide even alone: split it and carry the remainder forward.
+        const chunks = breakLongWord(ctx, word, maxWidth);
+        lines.push(...chunks.slice(0, -1));
+        current = chunks[chunks.length - 1] ?? "";
       }
     }
     lines.push(current);

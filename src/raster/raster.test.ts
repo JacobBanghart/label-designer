@@ -181,3 +181,57 @@ describe("rasterizeDocument: rotation geometry", () => {
     ).toBeGreaterThan(10);
   });
 });
+
+describe("long-token wrapping", () => {
+  it("breaks a token too wide for the box instead of overflowing the label", async () => {
+    // A 2x1 label is 406x203 px. A long unbroken order number cannot fit on one
+    // line at this size; it must wrap, not run off the edge, or the printed
+    // label silently loses characters.
+    const doc: LabelDocument = {
+      schemaVersion: SCHEMA_VERSION,
+      id: "overflow",
+      name: "overflow",
+      sizeId: "2x1",
+      orientation: "portrait",
+      dpi: DPI,
+      elements: [
+        {
+          id: "t",
+          kind: "text",
+          x: 0,
+          y: 0,
+          widthPx: 200,
+          heightPx: 180,
+          rotation: 0,
+          text: "20250903ku6pmv20250903ku6pmv",
+          fontSizePx: 40,
+          fontFamily: "sans-serif",
+          bold: false,
+          italic: false,
+          align: "left",
+        },
+      ],
+    };
+
+    const raster = await rasterizeDocument(doc, { createCanvas: nodeCanvas });
+
+    // Nothing should be burned in the column strip beyond the text box: if the
+    // token overflowed rather than wrapping, ink would appear out there.
+    let inkOutsideBox = 0;
+    for (let y = 0; y < raster.heightPx; y++) {
+      for (let x = 205; x < raster.widthPx; x++) {
+        if (getPixel(raster, x, y)) inkOutsideBox++;
+      }
+    }
+    expect(inkOutsideBox).toBe(0);
+
+    // ...and it did actually render something inside the box.
+    let inkInsideBox = 0;
+    for (let y = 0; y < raster.heightPx; y++) {
+      for (let x = 0; x < 200; x++) {
+        if (getPixel(raster, x, y)) inkInsideBox++;
+      }
+    }
+    expect(inkInsideBox).toBeGreaterThan(0);
+  });
+});
