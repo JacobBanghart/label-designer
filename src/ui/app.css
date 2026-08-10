@@ -372,3 +372,96 @@ input[type="number"] {
   pointer-events: auto;
   margin: 0;
 }
+
+/* ---- inline text editing ---- */
+
+.stage-canvas {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/*
+ * A real textarea sitting exactly over the Konva text. Canvas has no caret,
+ * selection, or IME; borrowing the browser's editing gets all of it free.
+ */
+.inline-text-editor {
+  position: absolute;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #000;
+  overflow: hidden;
+  resize: none;
+  border-radius: 0;
+}
+
+.library-list li {
+  cursor: grab;
+}
+
+.library-list li.dragging {
+  opacity: 0.4;
+}
+
+.library-list li:active {
+  cursor: grabbing;
+}
+
+/* ---- enlarged printer preview ---- */
+
+.mono-preview-button {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: zoom-in;
+  display: block;
+  width: 100%;
+}
+
+.preview-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 22, 26, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 50;
+}
+
+.preview-modal-inner {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 16px;
+  max-width: min(96vw, 1000px);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-modal-inner header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.preview-modal-inner h2 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+/* Scroll rather than scale: downscaling a 1-bit image misrepresents it. */
+.preview-modal-scroll {
+  overflow: auto;
+  background: #f4f5f7;
+  padding: 12px;
+  border-radius: 6px;
+}

@@ -36,6 +36,9 @@ interface Props {
   selectedIds: readonly string[];
   /** Elements that would be clipped on print. */
   clippedIds: readonly string[];
+  /** Element currently being edited inline, if any. */
+  editingId: string | null;
+  onEditStart: (id: string) => void;
   scale: number;
   tool: Tool;
   onToolUsed: () => void;
@@ -46,6 +49,8 @@ export function LabelCanvas({
   doc,
   selectedIds,
   clippedIds,
+  editingId,
+  onEditStart,
   scale,
   tool,
   onToolUsed,
@@ -285,6 +290,8 @@ export function LabelCanvas({
             <ElementNode
               key={element.id}
               element={element}
+              // Hidden while its DOM editor is open, so the text is not drawn twice.
+              hidden={element.id === editingId}
               dispatch={dispatch}
               onSelect={(additive) =>
                 dispatch(
@@ -295,6 +302,7 @@ export function LabelCanvas({
                       : { type: "select", id: element.id },
                 )
               }
+              onEditStart={onEditStart}
               onDragPosition={onDragPosition}
               onDragDone={onDragDone}
             />
@@ -411,16 +419,21 @@ function DraftPreview({
 
 interface ElementNodeProps {
   element: Element;
+  /** Hidden while its inline DOM editor is open, to avoid drawing the text twice. */
+  hidden?: boolean;
   dispatch: (action: EditorAction) => void;
   onSelect: (additive: boolean) => void;
+  onEditStart: (id: string) => void;
   onDragPosition: (moving: Element) => { dx: number; dy: number };
   onDragDone: () => void;
 }
 
 function ElementNode({
   element,
+  hidden,
   dispatch,
   onSelect,
+  onEditStart,
   onDragPosition,
   onDragDone,
 }: ElementNodeProps) {
@@ -441,6 +454,7 @@ function ElementNode({
      * write-back below subtracts half the box again.
      */
     <Group
+      visible={!hidden}
       id={element.id}
       x={element.x + element.widthPx / 2}
       y={element.y + element.heightPx / 2}
@@ -452,6 +466,12 @@ function ElementNode({
       draggable
       onMouseDown={(event) => onSelect(event.evt.shiftKey)}
       onTap={() => onSelect(false)}
+      onDblClick={() => {
+        if (isTextElement(element)) onEditStart(element.id);
+      }}
+      onDblTap={() => {
+        if (isTextElement(element)) onEditStart(element.id);
+      }}
       onDragStart={(event) => {
         onSelect(event.evt.shiftKey);
         dispatch({ type: "beginGesture" });

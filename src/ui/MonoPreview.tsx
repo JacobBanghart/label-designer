@@ -16,9 +16,11 @@ interface Props {
   doc: LabelDocument;
   /** Display width in CSS pixels; height follows the label's aspect ratio. */
   displayWidth: number;
+  /** Clicking opens a larger view. Omit for the enlarged view itself. */
+  onExpand?: () => void;
 }
 
-export function MonoPreview({ doc, displayWidth }: Props) {
+export function MonoPreview({ doc, displayWidth, onExpand }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,11 +66,21 @@ export function MonoPreview({ doc, displayWidth }: Props) {
 
   if (error) return <p className="error">Preview failed: {error}</p>;
 
-  return (
+  const canvas = (
     <canvas
       ref={canvasRef}
       className="mono-preview"
       style={{ width: displayWidth, height: "auto" }}
     />
+  );
+
+  if (!onExpand) return canvas;
+
+  // The sidebar thumbnail is far too small to judge 1-bit output on, which is
+  // the whole point of showing it -- so it opens a full-size view.
+  return (
+    <button type="button" className="mono-preview-button" onClick={onExpand} title="Enlarge">
+      {canvas}
+    </button>
   );
 }

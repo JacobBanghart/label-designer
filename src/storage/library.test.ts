@@ -150,8 +150,8 @@ describe("loadActive", () => {
 describe("parseLibrary", () => {
   it("drops corrupt entries instead of failing the whole library", () => {
     const library = parseLibrary({
-      good: { doc: doc("good"), updatedAt: 1 },
-      bad: { doc: { nonsense: true }, updatedAt: 2 },
+      good: { doc: doc("good"), updatedAt: 1, order: 0 },
+      bad: { doc: { nonsense: true }, updatedAt: 2, order: 1 },
       alsoBad: "not an object",
     });
 
@@ -165,11 +165,11 @@ describe("parseLibrary", () => {
 });
 
 describe("sortedEntries", () => {
-  it("orders by most recently updated", () => {
+  it("orders by explicit position, not recency", () => {
     const library = {
-      a: { doc: doc("a"), updatedAt: 100 },
-      b: { doc: doc("b"), updatedAt: 300 },
-      c: { doc: doc("c"), updatedAt: 200 },
+      a: { doc: doc("a"), updatedAt: 100, order: 2 },
+      b: { doc: doc("b"), updatedAt: 300, order: 0 },
+      c: { doc: doc("c"), updatedAt: 200, order: 1 },
     };
 
     expect(sortedEntries(library).map((entry) => entry.doc.id)).toEqual(["b", "c", "a"]);

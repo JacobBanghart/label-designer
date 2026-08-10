@@ -6,6 +6,8 @@
  * "save" button to forget to press.
  */
 
+import { useState } from "react";
+
 import type { LabelDocument } from "../core/document.ts";
 import { sortedEntries, type Library } from "../storage/library.ts";
 
@@ -16,10 +18,31 @@ interface Props {
   onNew: () => void;
   onDuplicate: () => void;
   onDelete: (id: string) => void;
+  onReorder: (ids: string[]) => void;
 }
 
-export function LibraryPanel({ library, activeId, onOpen, onNew, onDuplicate, onDelete }: Props) {
+export function LibraryPanel({
+  library,
+  activeId,
+  onOpen,
+  onNew,
+  onDuplicate,
+  onDelete,
+  onReorder,
+}: Props) {
   const entries = sortedEntries(library);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+
+  /** Move `draggingId` to sit where `targetId` currently is. */
+  function dropOn(targetId: string) {
+    if (!draggingId || draggingId === targetId) return;
+    const ids = entries.map((e) => e.doc.id);
+    const from = ids.indexOf(draggingId);
+    const to = ids.indexOf(targetId);
+    if (from === -1 || to === -1) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]!);
+    onReorder(ids);
+  }
 
   return (
     <div className="library">
@@ -39,7 +62,24 @@ export function LibraryPanel({ library, activeId, onOpen, onNew, onDuplicate, on
       ) : (
         <ul className="library-list">
           {entries.map(({ doc, updatedAt }) => (
-            <li key={doc.id} className={doc.id === activeId ? "active" : ""}>
+            <li
+              key={doc.id}
+              className={[
+                doc.id === activeId ? "active" : "",
+                doc.id === draggingId ? "dragging" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              draggable
+              onDragStart={() => setDraggingId(doc.id)}
+              onDragEnd={() => setDraggingId(null)}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                dropOn(doc.id);
+                setDraggingId(null);
+              }}
+            >
               <button type="button" className="open" onClick={() => onOpen(doc)}>
                 <span className="name">{doc.name || "Untitled label"}</span>
                 <span className="meta">
@@ -60,6 +100,7 @@ export function LibraryPanel({ library, activeId, onOpen, onNew, onDuplicate, on
           ))}
         </ul>
       )}
+      {entries.length > 1 && <p className="hint">Drag to reorder.</p>}
     </div>
   );
 }

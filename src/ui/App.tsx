@@ -22,7 +22,9 @@ import { createImageElement, readImageFile } from "../editor/importImage.ts";
 import {
   loadActive,
   loadLibrary,
+  nextUntitledName,
   removeFromLibrary,
+  reorderLibrary,
   saveToLibrary,
   setActiveId,
   type Library,
@@ -35,6 +37,7 @@ import { ImageInspector } from "./ImageInspector.tsx";
 import { MultiInspector } from "./MultiInspector.tsx";
 import { LibraryPanel } from "./LibraryPanel.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
+import { InlineTextEditor } from "./InlineTextEditor.tsx";
 import { useElementSize } from "./useElementSize.ts";
 
 /** Breathing room around the label inside the stage area, in CSS pixels. */
@@ -83,6 +86,8 @@ export function App() {
   const [stageRef, stageSize] = useElementSize<HTMLElement>();
   const imageRef = useRef<HTMLInputElement>(null);
   const [tool, setTool] = useState<Tool>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [previewExpanded, setPreviewExpanded] = useState(false);
   const [library, setLibrary] = useState<Library>(() => loadLibrary());
 
   /*
@@ -170,6 +175,12 @@ export function App() {
    */
   const clippedIds = useMemo(() => outOfBoundsIds(doc), [doc]);
 
+  // The text element being edited inline, if it still exists (undo can remove it).
+  const editingElement = useMemo(() => {
+    const found = doc.elements.find((el) => el.id === editingId);
+    return found && isTextElement(found) ? found : null;
+  }, [doc, editingId]);
+
   // Fit the label to whatever room the stage area has, leaving a margin. Capped
   // at 1:1 so a small label on a big screen is not blown up past its real
   // resolution, which would just show interpolation artefacts.
@@ -194,7 +205,10 @@ export function App() {
   );
 
   const handleNew = useCallback(() => {
-    const fresh = createDocument(doc.sizeId, doc.orientation);
+    const fresh = {
+      ...createDocument(doc.sizeId, doc.orientation),
+      name: nextUntitledName(loadLibrary()),
+    };
     saveToLibrary(fresh);
     setLibrary(loadLibrary());
     dispatch({ type: "load", doc: fresh });
@@ -398,15 +412,45 @@ export function App() {
             {geometry.widthIn}&Prime; &times; {geometry.heightIn}&Prime; &middot; {geometry.widthPx}{" "}
             &times; {geometry.heightPx} px @ {doc.dpi} DPI
           </div>
-          <LabelCanvas
-            doc={doc}
-            selectedIds={selectedIds}
-            clippedIds={clippedIds}
-            scale={scale}
-            tool={tool}
-            onToolUsed={() => setTool(null)}
-            dispatch={dispatch}
-          />
+          {/*
+            Wrapper sized to the scaled label so the inline text editor can be
+            absolutely positioned over the exact Konva coordinates.
+          */}
+          <div
+            className="stage-canvas"
+            style={{ width: geometry.widthPx * scale, height: geometry.heightPx * scale }}
+          >
+            <LabelCanvas
+              doc={doc}
+              selectedIds={selectedIds}
+              clippedIds={clippedIds}
+              editingId={editingId}
+              onEditStart={(id) => {
+                dispatch({ type: "beginGesture" });
+                setEditingId(id);
+              }}
+              scale={scale}
+              tool={tool}
+              onToolUsed={() => setTool(null)}
+              dispatch={dispatch}
+            />
+            {editingElement && (
+              <InlineTextEditor
+                element={editingElement}
+                scale={scale}
+                onChange={(text) =>
+                  dispatch({
+                    type: "update",
+                    id: editingElement.id,
+                    patch: { text },
+                    transient: true,
+                  })
+                }
+                onCommit={() => setEditingId(null)}
+              />
+            )}
+          </div>
+
           {/*
             Overlaid rather than stacked below the canvas. These messages appear
             and disappear as you work, and in the flow they changed the measured
@@ -472,6 +516,7 @@ export function App() {
             onNew={handleNew}
             onDuplicate={handleDuplicate}
             onDelete={handleDelete}
+            onReorder={(ids) => setLibrary(reorderLibrary(ids))}
           />
 
           {showPreview && (
@@ -481,11 +526,42 @@ export function App() {
                 Exactly what gets burned &mdash; 1 bit, no grey. Set the print dialog to
                 &ldquo;Actual size&rdquo; or output will be rescaled.
               </p>
-              <MonoPreview doc={doc} displayWidth={220} />
+              <MonoPreview doc={doc} displayWidth={220} onExpand={() => setPreviewExpanded(true)} />
             </div>
           )}
         </aside>
       </div>
+
+      {previewExpanded && (
+        <div
+          className="preview-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Printer output, full size"
+          onClick={() => setPreviewExpanded(false)}
+        >
+          <div className="preview-modal-inner" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <h2>
+                Printer output &mdash; {geometry.widthPx} &times; {geometry.heightPx} px @ {doc.dpi}{" "}
+                DPI
+              </h2>
+              <button type="button" onClick={() => setPreviewExpanded(false)}>
+                Close
+              </button>
+            </header>
+            <p className="hint">
+              Exactly the pixels that get burned. Set the print dialog to &ldquo;Actual size&rdquo;
+              or output will be rescaled.
+            </p>
+            {/* Rendered at 1:1 device pixels, which is the only honest way to
+                judge 1-bit output; the container scrolls rather than scaling. */}
+            <div className="preview-modal-scroll">
+              <MonoPreview doc={doc} displayWidth={geometry.widthPx} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

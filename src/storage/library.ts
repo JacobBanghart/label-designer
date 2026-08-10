@@ -27,8 +27,16 @@ const LEGACY_IMPORTED_KEY = "label-designer:legacy-imported";
 
 export interface LibraryEntry {
   doc: LabelDocument;
-  /** Epoch millis of the last save, for ordering the list. */
+  /** Epoch millis of the last save. Shown, but no longer used for ordering. */
   updatedAt: number;
+  /**
+   * Manual position in the list.
+   *
+   * Sorting by updatedAt made the list reshuffle on every autosave: the label
+   * you were editing jumped to the top, so flipping between two labels moved
+   * the target out from under the cursor. Order is now explicit and stable.
+   */
+  order: number;
 }
 
 export type Library = Record<string, LibraryEntry>;
@@ -84,6 +92,7 @@ export function parseLibrary(raw: unknown): Library {
     library[id] = {
       doc,
       updatedAt: typeof entry.updatedAt === "number" ? entry.updatedAt : 0,
+      order: typeof entry.order === "number" ? entry.order : Number.MAX_SAFE_INTEGER,
     };
   }
   return library;
@@ -99,7 +108,7 @@ export function loadLibrary(): Library {
     write(LEGACY_IMPORTED_KEY, true);
     const legacy = migrate(readRaw(LEGACY_KEY));
     if (legacy && !library[legacy.id]) {
-      library[legacy.id] = { doc: legacy, updatedAt: Date.now() };
+      library[legacy.id] = { doc: legacy, updatedAt: Date.now(), order: nextOrder(library) };
       write(LIBRARY_KEY, library);
       write(ACTIVE_KEY, legacy.id);
     }
@@ -111,7 +120,10 @@ export function loadLibrary(): Library {
 /** Throws StorageFullError if the write did not land. */
 export function saveToLibrary(doc: LabelDocument): void {
   const library = loadLibrary();
-  library[doc.id] = { doc, updatedAt: Date.now() };
+  // Keep an existing position; a new label goes to the end.
+  const existing = library[doc.id];
+  const order = existing?.order ?? nextOrder(library);
+  library[doc.id] = { doc, updatedAt: Date.now(), order };
 
   if (!write(LIBRARY_KEY, library)) throw new StorageFullError();
   write(ACTIVE_KEY, doc.id);
@@ -147,7 +159,48 @@ export function loadActive(): LabelDocument | null {
   return sortedEntries(library)[0]?.doc ?? null;
 }
 
-/** Library entries, most recently updated first. */
+function nextOrder(library: Library): number {
+  const orders = Object.values(library)
+    .map((e) => e.order)
+    .filter((n) => Number.isFinite(n) && n < Number.MAX_SAFE_INTEGER);
+  return orders.length === 0 ? 0 : Math.max(...orders) + 1;
+}
+
+/**
+ * Library entries in display order.
+ *
+ * Explicit `order` wins so drag-to-reorder sticks. Entries that have never been
+ * ordered fall back to a natural-ish name comparison, which keeps "Untitled
+ * label 2" before "Untitled label 10" instead of after it.
+ */
 export function sortedEntries(library: Library): LibraryEntry[] {
-  return Object.values(library).sort((a, b) => b.updatedAt - a.updatedAt);
+  return Object.values(library).sort((a, b) => {
+    if (a.order !== b.order) return a.order - b.order;
+    return a.doc.name.localeCompare(b.doc.name, undefined, { numeric: true, sensitivity: "base" });
+  });
+}
+
+/** Persist a new manual ordering, given ids in the desired order. */
+export function reorderLibrary(ids: readonly string[]): Library {
+  const library = loadLibrary();
+  ids.forEach((id, index) => {
+    const entry = library[id];
+    if (entry) library[id] = { ...entry, order: index };
+  });
+  write(LIBRARY_KEY, library);
+  return library;
+}
+
+/**
+ * A unique "Untitled label N" for a new document.
+ *
+ * Numbering rather than repeating "Untitled label" so the list is navigable and
+ * the alphabetical fallback is deterministic.
+ */
+export function nextUntitledName(library: Library): string {
+  const used = new Set(Object.values(library).map((e) => e.doc.name));
+  for (let n = 1; ; n++) {
+    const candidate = `Untitled label ${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
 }
