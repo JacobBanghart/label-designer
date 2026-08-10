@@ -23,12 +23,32 @@ Currently supported:
 - Two label sizes: 4"x6" and 2"x1"
 - An orientation toggle that swaps width/height (e.g. 4x6 -> 6x4), changing
   the actual output dimensions, not just the editing view
-- Rotatable text elements
-- Undo/redo
+- Rotatable text elements, with drag/resize/rotate handles and a property
+  panel (font, size, alignment, bold/italic, layer order)
+- Undo/redo, with drag gestures collapsed into a single history step
+- A live 1-bit preview showing exactly what the printer will burn
+- Autosave to browser storage, plus JSON export/import
 - Printing via the browser's native print dialog
 
-Not yet implemented: barcode support is deliberately deferred, not planned
-for the current MVP.
+Not yet implemented, in rough priority order: freeform drawing tools (shapes,
+lines, arrows, pen), barcodes and QR, snapping and alignment guides, image
+import, round label stock, and a direct WebUSB transport that would skip the
+print dialog on supported printers.
+
+Barcode support is **deliberately** deferred rather than merely missing --
+barcode management is a design question in its own right, and guessing at it
+now would mean a migration later.
+
+### Keyboard
+
+| Key                               | Action                    |
+| --------------------------------- | ------------------------- |
+| `Ctrl/Cmd+Z` / `Ctrl/Cmd+Shift+Z` | Undo / redo               |
+| `Ctrl/Cmd+D`                      | Duplicate selection       |
+| `Delete` / `Backspace`            | Delete selection          |
+| `Escape`                          | Deselect                  |
+| Arrow keys                        | Nudge by one device pixel |
+| `Shift` + arrows                  | Nudge by ten              |
 
 ## Self-hosting
 
@@ -61,14 +81,45 @@ to your own ingress setup.
 ## Local development
 
 This project uses [Vite+](https://viteplus.dev) (the `vp` CLI), not plain
-Vite.
+Vite, with Bun as the package manager.
 
 ```sh
 vp install   # install dependencies
 vp dev       # start the dev server
-vp check     # format, lint, and type-check
+vp check     # format, lint, and type-check (add --fix to auto-fix)
 vp test      # run tests
 ```
+
+There is no separate ESLint, Prettier, Vitest config, or `tsc` step -- `vp
+check` and `vp test` cover all of it. Please don't add them.
+
+Note that Bun installs dependencies but does not run the build: `vp` is a
+Node script, so the Docker build stage installs with Bun and then invokes it
+under Node.
+
+### Architecture
+
+The pipeline is deliberately linear, and the middle step is the contract
+everything else is built around:
+
+```
+LabelDocument  ->  MonoRaster (packed 1bpp)  ->  transport
+                          |
+                          +-- PdfTransport  (browser print dialog)
+                          +-- WebUsbTransport  (future)
+```
+
+`MonoRaster` is the canonical render artifact rather than a PNG or PDF,
+because printer command languages ultimately want a bitmap. Terminating the
+pipeline in an image format would mean retrofitting rasterization when a
+direct-to-printer transport is added.
+
+The rasterizer renders the document straight to a 2D context rather than
+going through Konva, so it is a pure function of the document and testable
+headlessly. Konva is only the editor's interaction layer. The cost of that
+split is that the editor and the rasterizer must agree on geometry
+independently -- `src/integration.test.ts` exists to catch it when they
+don't.
 
 ## Printing
 
