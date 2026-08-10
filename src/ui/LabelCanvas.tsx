@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Group, Layer, Rect, Stage, Text, Transformer } from "react-konva";
+import { Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import type Konva from "konva";
 
 import {
@@ -21,6 +21,10 @@ import { resolveGeometry } from "../core/label.ts";
 import type { EditorAction } from "../editor/store.ts";
 import { boxElementFromDrag, polylineFromPoints, type ShapeKind } from "../editor/operations.ts";
 import { ShapeNode } from "./ShapeNode.tsx";
+import { computeSnap, type Guide } from "../editor/snapping.ts";
+
+/** Magnetic pull radius, in SCREEN pixels; divided by scale at use. */
+const SNAP_SCREEN_PX = 7;
 
 /** null means the select/move tool. */
 export type Tool = ShapeKind | null;
@@ -44,6 +48,45 @@ export function LabelCanvas({ doc, selectedId, scale, tool, onToolUsed, dispatch
   // component state rather than the document so an in-progress gesture never
   // enters undo history.
   const [draft, setDraft] = useState<number[] | null>(null);
+
+  // Alignment guides for the drag in progress. Also view-only state.
+  const [guides, setGuides] = useState<readonly Guide[]>([]);
+
+  /*
+   * Snap an element being dragged, and record the guides to draw.
+   *
+   * The threshold is divided by the display scale so the magnetic pull is a
+   * constant number of SCREEN pixels. In label space it would be ~8px on a
+   * zoomed-out 4x6 and feel far stronger than on a 2x1.
+   */
+  function onDragPosition(moving: Element) {
+    if (snapDisabled.current) {
+      setGuides([]);
+      return { dx: 0, dy: 0 };
+    }
+    const result = computeSnap(moving, doc.elements, geometry, SNAP_SCREEN_PX / scale);
+    setGuides(result.guides);
+    return result;
+  }
+
+  function onDragDone() {
+    setGuides([]);
+  }
+
+  // Holding Alt suspends snapping, the usual convention for nudging something
+  // into a position the guides keep pulling it out of.
+  const snapDisabled = useRef(false);
+  useEffect(() => {
+    const set = (event: KeyboardEvent) => {
+      snapDisabled.current = event.altKey;
+    };
+    window.addEventListener("keydown", set);
+    window.addEventListener("keyup", set);
+    return () => {
+      window.removeEventListener("keydown", set);
+      window.removeEventListener("keyup", set);
+    };
+  }, []);
 
   /** Pointer position in label device pixels, undoing the display scale. */
   function pointerInLabelSpace(): [number, number] | null {
@@ -145,12 +188,29 @@ export function LabelCanvas({ doc, selectedId, scale, tool, onToolUsed, dispatch
             element={element}
             dispatch={dispatch}
             onSelect={() => dispatch({ type: "select", id: element.id })}
+            onDragPosition={onDragPosition}
+            onDragDone={onDragDone}
           />
         ))}
 
         {/* Live preview of the stroke being drawn. Not part of the document,
             so it never enters undo history. */}
         {draft && tool && <DraftPreview tool={tool} points={draft} doc={doc} />}
+
+        {guides.map((guide) => (
+          <Line
+            key={`${guide.orientation}-${guide.position}`}
+            points={
+              guide.orientation === "vertical"
+                ? [guide.position, 0, guide.position, geometry.heightPx]
+                : [0, guide.position, geometry.widthPx, guide.position]
+            }
+            stroke="#e0218a"
+            strokeWidth={1 / scale}
+            dash={[6 / scale, 4 / scale]}
+            listening={false}
+          />
+        ))}
 
         <Transformer
           ref={transformerRef}
@@ -211,9 +271,17 @@ interface ElementNodeProps {
   element: Element;
   dispatch: (action: EditorAction) => void;
   onSelect: () => void;
+  onDragPosition: (moving: Element) => { dx: number; dy: number };
+  onDragDone: () => void;
 }
 
-function ElementNode({ element, dispatch, onSelect }: ElementNodeProps) {
+function ElementNode({
+  element,
+  dispatch,
+  onSelect,
+  onDragPosition,
+  onDragDone,
+}: ElementNodeProps) {
   // Reserved kinds (image/barcode/qr) are not renderable yet; skip rather than
   // crash, matching what the rasterizer does.
   const content = renderContent(element);
@@ -247,16 +315,24 @@ function ElementNode({ element, dispatch, onSelect }: ElementNodeProps) {
         dispatch({ type: "beginGesture" });
       }}
       onDragMove={(event) => {
-        dispatch({
-          type: "update",
-          id: element.id,
-          patch: {
-            x: Math.round(event.target.x() - element.widthPx / 2),
-            y: Math.round(event.target.y() - element.heightPx / 2),
-          },
-          transient: true,
-        });
+        const node = event.target;
+        const raw = {
+          x: Math.round(node.x() - element.widthPx / 2),
+          y: Math.round(node.y() - element.heightPx / 2),
+        };
+
+        const snap = onDragPosition({ ...element, ...raw });
+        const next = { x: raw.x + Math.round(snap.dx), y: raw.y + Math.round(snap.dy) };
+
+        // Move the Konva node too, not just the document. Without this the node
+        // sits under the cursor while the document says otherwise, and the
+        // element visibly lags or jitters against the snap.
+        node.x(next.x + element.widthPx / 2);
+        node.y(next.y + element.heightPx / 2);
+
+        dispatch({ type: "update", id: element.id, patch: next, transient: true });
       }}
+      onDragEnd={onDragDone}
       onTransformStart={() => dispatch({ type: "beginGesture" })}
       onTransformEnd={(event) => {
         const node = event.target;

@@ -28,14 +28,16 @@ Currently supported:
 - Drawing tools: rectangle, ellipse, line, arrow, and a freehand pen, all
   drag-to-draw with a live preview. Outline or solid fill, adjustable stroke
   width, corner radius, and arrowhead size
+- Snapping with alignment guides — to label edges and centre lines, and to
+  other elements' edges and centres. Hold `Alt` while dragging to suspend it
 - Undo/redo, with drag gestures collapsed into a single history step
 - A live 1-bit preview showing exactly what the printer will burn
 - Autosave to browser storage, plus JSON export/import
 - Printing via the browser's native print dialog
 
-Not yet implemented, in rough priority order: barcodes and QR, snapping and
-alignment guides, image import, round label stock, and a direct WebUSB
-transport that would skip the print dialog on supported printers.
+Not yet implemented, in rough priority order: barcodes and QR, image import,
+round label stock, and a direct WebUSB transport that would skip the print
+dialog on supported printers.
 
 Barcode support is **deliberately** deferred rather than merely missing --
 barcode management is a design question in its own right, and guessing at it
@@ -56,6 +58,7 @@ now would mean a migration later.
 | `R` / `O`                         | Rectangle / ellipse       |
 | `L` / `A`                         | Line / arrow              |
 | `P`                               | Freehand pen              |
+| Hold `Alt` while dragging         | Suspend snapping          |
 
 ## Self-hosting
 
