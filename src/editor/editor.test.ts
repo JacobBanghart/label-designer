@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { SCHEMA_VERSION, type TextElement } from "../core/document.ts";
+import { SCHEMA_VERSION, type ShapeElement, type TextElement } from "../core/document.ts";
 import { resolveGeometry } from "../core/label.ts";
 import { amend, canRedo, canUndo, createHistory, push, redo, undo } from "./history.ts";
 import {
   addElement,
+  boxElementFromDrag,
   createDocument,
   createTextElement,
+  polylineFromPoints,
   removeElement,
   reorderElement,
   setLabelSize,
@@ -177,5 +179,70 @@ describe("operations", () => {
       expect(moved.fontSizePx).toBeGreaterThanOrEqual(8);
       expect(moved.fontSizePx).toBeLessThan(el.fontSizePx);
     });
+  });
+});
+
+describe("drag-to-draw geometry", () => {
+  const doc = createDocument("4x6", "portrait");
+
+  it("builds a rect from a drag regardless of drag direction", () => {
+    const forward = boxElementFromDrag(doc, "rect", [100, 100, 300, 250]);
+    const backward = boxElementFromDrag(doc, "rect", [300, 250, 100, 100]);
+
+    expect(forward).not.toBeNull();
+    // Dragging up-left must give the same box as dragging down-right.
+    expect(backward).toMatchObject({
+      x: forward!.x,
+      y: forward!.y,
+      widthPx: forward!.widthPx,
+      heightPx: forward!.heightPx,
+    });
+    expect(forward!.widthPx).toBe(200);
+    expect(forward!.heightPx).toBe(150);
+  });
+
+  it("discards a stray click rather than adding an invisible speck", () => {
+    expect(boxElementFromDrag(doc, "rect", [100, 100, 101, 101])).toBeNull();
+    expect(polylineFromPoints(doc, "line", [100, 100, 102, 100])).toBeNull();
+  });
+
+  it("normalises polyline points into the bounding box", () => {
+    const element = polylineFromPoints(doc, "freehand", [100, 200, 200, 400, 300, 200]);
+
+    expect(element).not.toBeNull();
+    expect(element!.x).toBe(100);
+    expect(element!.y).toBe(200);
+    expect(element!.widthPx).toBe(200);
+    expect(element!.heightPx).toBe(200);
+    // First point at the box's left edge, mid-height point at the bottom.
+    expect(element!.points.slice(0, 2)).toEqual([0, 0]);
+    expect(element!.points.slice(2, 4)).toEqual([0.5, 1]);
+  });
+
+  it("survives a perfectly straight stroke, which yields a zero-height box", () => {
+    const element = polylineFromPoints(doc, "line", [100, 200, 400, 200]);
+
+    expect(element).not.toBeNull();
+    expect(element!.heightPx).toBe(0);
+    // No NaN from dividing by the zero extent.
+    expect(element!.points.every((n) => Number.isFinite(n))).toBe(true);
+  });
+
+  it("gives arrows a head and plain lines none", () => {
+    const arrow = polylineFromPoints(doc, "arrow", [0, 0, 200, 200]);
+    const line = polylineFromPoints(doc, "line", [0, 0, 200, 200]);
+
+    expect(arrow!.arrowHeadPx).toBeGreaterThan(0);
+    expect(line!.arrowHeadPx).toBe(0);
+  });
+
+  it("scales stroke width, not just extents, when the label size changes", () => {
+    const withShape = addElement(doc, boxElementFromDrag(doc, "rect", [0, 0, 400, 400])!);
+    const resized = setLabelSize(withShape, "2x1");
+
+    const before = withShape.elements[0] as ShapeElement;
+    const after = resized.elements[0] as ShapeElement;
+    expect(after.strokeWidthPx).toBeLessThan(before.strokeWidthPx);
+    expect(after.strokeWidthPx).toBeGreaterThanOrEqual(1);
   });
 });

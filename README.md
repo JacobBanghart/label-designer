@@ -25,15 +25,17 @@ Currently supported:
   the actual output dimensions, not just the editing view
 - Rotatable text elements, with drag/resize/rotate handles and a property
   panel (font, size, alignment, bold/italic, layer order)
+- Drawing tools: rectangle, ellipse, line, arrow, and a freehand pen, all
+  drag-to-draw with a live preview. Outline or solid fill, adjustable stroke
+  width, corner radius, and arrowhead size
 - Undo/redo, with drag gestures collapsed into a single history step
 - A live 1-bit preview showing exactly what the printer will burn
 - Autosave to browser storage, plus JSON export/import
 - Printing via the browser's native print dialog
 
-Not yet implemented, in rough priority order: freeform drawing tools (shapes,
-lines, arrows, pen), barcodes and QR, snapping and alignment guides, image
-import, round label stock, and a direct WebUSB transport that would skip the
-print dialog on supported printers.
+Not yet implemented, in rough priority order: barcodes and QR, snapping and
+alignment guides, image import, round label stock, and a direct WebUSB
+transport that would skip the print dialog on supported printers.
 
 Barcode support is **deliberately** deferred rather than merely missing --
 barcode management is a design question in its own right, and guessing at it
@@ -49,6 +51,11 @@ now would mean a migration later.
 | `Escape`                          | Deselect                  |
 | Arrow keys                        | Nudge by one device pixel |
 | `Shift` + arrows                  | Nudge by ten              |
+| `V`                               | Select/move tool          |
+| `T`                               | Add text                  |
+| `R` / `O`                         | Rectangle / ellipse       |
+| `L` / `A`                         | Line / arrow              |
+| `P`                               | Freehand pen              |
 
 ## Self-hosting
 

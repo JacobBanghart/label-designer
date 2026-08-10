@@ -23,6 +23,16 @@ const TOOLS = [
   { kind: "freehand", label: "Pen", hint: "Freehand pen (P) -- drag on the label" },
 ] as const;
 
+/** Single-key tool shortcuts. `null` is the select/move tool. */
+const TOOL_KEYS: Record<string, Tool> = {
+  v: null,
+  r: "rect",
+  o: "ellipse",
+  l: "line",
+  a: "arrow",
+  p: "freehand",
+};
+
 /** Used for the first paint, before the ResizeObserver has measured. */
 const FALLBACK_SCALE = 0.4;
 
@@ -44,6 +54,42 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [stageRef, stageSize] = useElementSize<HTMLElement>();
   const [tool, setTool] = useState<Tool>(null);
+
+  /*
+   * Single-key tool switching, the way every drawing app works.
+   *
+   * Deliberately kept here rather than in useEditor: the tool is view state,
+   * not document state, so it must not be undoable. Defers to form fields for
+   * the same reason the editor shortcuts do -- typing "r" in the inspector must
+   * type an r.
+   */
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (target?.isContentEditable) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "escape") {
+        setTool(null);
+        return;
+      }
+      if (key === "t") {
+        event.preventDefault();
+        dispatch({ type: "addText" });
+        return;
+      }
+      const next = TOOL_KEYS[key];
+      if (next !== undefined) {
+        event.preventDefault();
+        setTool(next);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [dispatch]);
 
   // Autosave. Safe to run unconditionally only because the editor is seeded
   // from storage during initialisation (see useEditor call above) -- there is
