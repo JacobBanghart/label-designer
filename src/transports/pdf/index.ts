@@ -61,65 +61,120 @@ export async function buildPdf(raster: MonoRaster, options?: PrintOptions): Prom
 }
 
 /** Open `bytes` (a PDF) in a hidden iframe and trigger the browser print dialog. */
-function printPdfBytes(bytes: Uint8Array): Promise<PrintResult> {
+/**
+ * Print by loading an HTML page containing the label image into a same-origin
+ * iframe, with an exact @page size.
+ *
+ * The obvious approach -- put the PDF in an iframe and call print() -- does not
+ * work in Chrome. PDFs are rendered by the PDFium plugin, which does not
+ * reliably expose print() to the parent frame, and a zero-size hidden iframe
+ * may never load the plugin at all, so onload never fires and nothing happens
+ * with no error. That silent failure is what this replaces.
+ *
+ * HTML avoids the plugin entirely. Geometry is preserved by setting @page to the
+ * label's exact physical size with zero margin, and sizing the image in inches
+ * to match, so there is nothing for the browser to scale.
+ */
+function printRasterViaHtml(raster: MonoRaster, options: PrintOptions): Promise<PrintResult> {
   return new Promise((resolve) => {
-    try {
-      if (typeof document === "undefined" || typeof window === "undefined") {
-        resolve({ ok: false, message: "No browser environment available to print in." });
-        return;
-      }
+    if (typeof document === "undefined" || typeof window === "undefined") {
+      resolve({ ok: false, message: "No browser environment available to print in." });
+      return;
+    }
 
-      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
+    void (async () => {
+      try {
+        const png = await encodeMonoRasterAsPng(raster);
+        let binary = "";
+        for (const byte of png) binary += String.fromCharCode(byte);
+        const dataUrl = `data:image/png;base64,${btoa(binary)}`;
 
-      const iframe = document.createElement("iframe");
-      iframe.style.position = "fixed";
-      iframe.style.right = "0";
-      iframe.style.bottom = "0";
-      iframe.style.width = "0";
-      iframe.style.height = "0";
-      iframe.style.border = "0";
-      iframe.style.visibility = "hidden";
+        const widthIn = raster.widthPx / raster.dpi;
+        const heightIn = raster.heightPx / raster.dpi;
+        const copies = Math.max(1, Math.round(options.copies));
 
-      let settled = false;
-      const cleanup = () => {
-        if (settled) return;
-        settled = true;
-        URL.revokeObjectURL(url);
-        // Give the print dialog a moment to open before removing the iframe.
-        setTimeout(() => {
-          iframe.remove();
-        }, 1000);
-      };
+        const pages = Array.from({ length: copies }, () => `<img src="${dataUrl}" alt="">`).join(
+          "",
+        );
 
-      iframe.onload = () => {
-        try {
+        const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+          @page { size: ${widthIn}in ${heightIn}in; margin: 0; }
+          html, body { margin: 0; padding: 0; background: #fff; }
+          img {
+            display: block;
+            width: ${widthIn}in;
+            height: ${heightIn}in;
+            /* Never smooth a 1-bit image; show the real dots. */
+            image-rendering: pixelated;
+            /* Stop the browser lightening blacks to save ink. */
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            page-break-after: always;
+            break-after: page;
+          }
+          img:last-child { page-break-after: auto; break-after: auto; }
+        </style></head><body>${pages}</body></html>`;
+
+        const iframe = document.createElement("iframe");
+        // Not display:none and not 0x0: some browsers skip layout and loading
+        // entirely for those, which is half of why the old version failed.
+        iframe.setAttribute("aria-hidden", "true");
+        iframe.style.position = "fixed";
+        iframe.style.left = "-10000px";
+        iframe.style.top = "0";
+        iframe.style.width = "1px";
+        iframe.style.height = "1px";
+        iframe.style.opacity = "0";
+        iframe.style.border = "0";
+
+        let settled = false;
+        const finish = (result: PrintResult) => {
+          if (settled) return;
+          settled = true;
+          // Leave the iframe alive briefly: removing it while the dialog is
+          // open cancels the job in some browsers.
+          setTimeout(() => iframe.remove(), 60_000);
+          resolve(result);
+        };
+
+        iframe.onload = () => {
           const contentWindow = iframe.contentWindow;
           if (!contentWindow) {
-            cleanup();
-            resolve({ ok: false, message: "Print iframe has no content window." });
+            finish({ ok: false, message: "Print frame has no content window." });
             return;
           }
-          contentWindow.focus();
-          contentWindow.print();
-          cleanup();
-          resolve({ ok: true });
-        } catch (err) {
-          cleanup();
-          resolve({ ok: false, message: err instanceof Error ? err.message : String(err) });
-        }
-      };
+          // Wait for the image itself, not just the document: printing before
+          // it decodes yields a blank page.
+          const image = contentWindow.document.querySelector("img");
+          const go = () => {
+            try {
+              contentWindow.focus();
+              contentWindow.print();
+              finish({ ok: true });
+            } catch (err) {
+              finish({
+                ok: false,
+                message: err instanceof Error ? err.message : "Could not open the print dialog.",
+              });
+            }
+          };
+          if (image && !image.complete) image.addEventListener("load", go, { once: true });
+          else go();
+        };
 
-      iframe.onerror = () => {
-        cleanup();
-        resolve({ ok: false, message: "Failed to load PDF into print iframe." });
-      };
+        document.body.appendChild(iframe);
+        iframe.srcdoc = html;
 
-      iframe.src = url;
-      document.body.appendChild(iframe);
-    } catch (err) {
-      resolve({ ok: false, message: err instanceof Error ? err.message : String(err) });
-    }
+        // If onload never fires, say so rather than appearing to succeed.
+        setTimeout(
+          () =>
+            finish({ ok: false, message: "The print frame did not load. Try exporting a PDF." }),
+          15_000,
+        );
+      } catch (err) {
+        resolve({ ok: false, message: err instanceof Error ? err.message : String(err) });
+      }
+    })();
   });
 }
 
@@ -141,8 +196,7 @@ export const pdfTransport: PrintTransport = {
 
   async print(raster: MonoRaster, options: PrintOptions): Promise<PrintResult> {
     try {
-      const bytes = await buildPdf(raster, options);
-      return await printPdfBytes(bytes);
+      return await printRasterViaHtml(raster, options);
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }
