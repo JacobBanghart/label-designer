@@ -13,7 +13,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { createMonoRaster, getPixel, setPixel } from "../../core/raster.ts";
 import { DPI } from "../../core/units.ts";
 
-import { encodeMonoRasterAsPng } from "./png.ts";
+import { encodeMonoRasterAsPng } from "../../core/png.ts";
 
 /** Minimal PNG reader: parses IHDR + concatenated IDAT, inflates via DecompressionStream. */
 async function decodePng(

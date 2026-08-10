@@ -19,7 +19,7 @@ import type {
   TransportCaps,
 } from "../../core/transport.ts";
 
-import { encodeMonoRasterAsPng } from "./png.ts";
+import { encodeMonoRasterAsPng } from "../../core/png.ts";
 
 /**
  * Build a print-ready PDF from a MonoRaster.

@@ -1,19 +1,11 @@
 /**
- * Minimal PNG encoder for 1-bit-per-pixel MonoRaster data.
+ * Minimal 1-bit PNG encoder.
  *
- * pdf-lib has no native 1-bit image support, so we wrap the packed bitmap in
- * a grayscale PNG (color type 0, bit depth 1) and embed that via
- * `PDFDocument.embedPng`. This is chosen deliberately over expanding to 8-bit
- * greyscale or 24-bit RGB: a PNG's grayscale bit-depth-1 scanline layout is
- * bit-for-bit IDENTICAL to `MonoRaster.bits` (MSB-first, rows padded to a
- * byte boundary, same `bytesPerRow()` formula) -- the only difference is
- * color polarity (PNG: 0 = black, 1 = white; MonoRaster: 1 = black). So each
- * row is just the raster row bytes with every bit flipped, no per-pixel
- * expansion, no resampling, and no precision lost. The pixels stay hard
- * black/white all the way through.
+ * Lives in core because two callers need it: the PDF transport embeds the PNG,
+ * and PNG export hands it to the user directly. A second implementation would
+ * be a second place for the bit-packing to go subtly wrong.
  */
-
-import { bytesPerRow, type MonoRaster } from "../../core/raster.ts";
+import { bytesPerRow, type MonoRaster } from "./raster.ts";
 
 const PNG_SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 

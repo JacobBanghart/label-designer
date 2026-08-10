@@ -17,7 +17,8 @@ import { useEditor } from "../editor/store.ts";
 import { createDocument, nextId } from "../editor/operations.ts";
 import { outOfBoundsIds } from "../editor/bounds.ts";
 import { rasterizeDocument } from "../raster/index.ts";
-import { downloadJson, importJson } from "../storage/local.ts";
+import { importJson } from "../storage/local.ts";
+import { exportJson, exportPdf, exportPng } from "../editor/exporters.ts";
 import { createImageElement, readImageFile } from "../editor/importImage.ts";
 import { createTestPatternElement } from "../editor/testPattern.ts";
 import {
@@ -369,10 +370,47 @@ export function App() {
           <button type="button" onClick={() => setShowPreview((value) => !value)}>
             {showPreview ? "Hide" : "Show"} 1-bit preview
           </button>
-          <button type="button" onClick={() => downloadJson(doc)}>
-            Export
+          {/*
+            Three explicit buttons rather than one "Export": PDF and PNG are the
+            artifacts you hand to someone or archive, JSON is the save file.
+            Collapsing them lost that distinction and surprised people who
+            expected a printable file.
+          */}
+          <span className="group-label">Export</span>
+          <button
+            type="button"
+            onClick={async () => {
+              setStatus("Exporting PDF...");
+              try {
+                await exportPdf(doc);
+                setStatus(null);
+              } catch (err) {
+                setStatus(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }}
+            title="Print-ready PDF at the label's exact physical size"
+          >
+            PDF
           </button>
-          <button type="button" onClick={() => fileRef.current?.click()}>
+          <button
+            type="button"
+            onClick={async () => {
+              setStatus("Exporting PNG...");
+              try {
+                await exportPng(doc);
+                setStatus(null);
+              } catch (err) {
+                setStatus(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+              }
+            }}
+            title="1-bit PNG at the label's native resolution"
+          >
+            PNG
+          </button>
+          <button type="button" onClick={() => exportJson(doc)} title="The design, for re-import">
+            JSON
+          </button>
+          <button type="button" onClick={() => fileRef.current?.click()} title="Open a .json label">
             Import
           </button>
           <input

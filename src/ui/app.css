@@ -465,3 +465,8 @@ input[type="number"] {
   padding: 12px;
   border-radius: 6px;
 }
+
+.group-label {
+  color: var(--muted);
+  font-size: 12px;
+}

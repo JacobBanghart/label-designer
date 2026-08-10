@@ -42,6 +42,9 @@ Currently supported:
 - Image import — drop a file on the label or use the Image button. Choose
   hard-threshold rendering for logos and line art, or Floyd-Steinberg
   dithering for photographs, with an invert toggle
+- Export as **PDF** (print-ready, exact physical size), **PNG** (1-bit at native
+  resolution), or **JSON** (the design, for re-import). All three go through the
+  same rasterizer as printing, so an exported file is what the printer receives
 - A library of named labels — create, duplicate, switch, delete. Autosaved
   continuously, so there is no save button to forget. Plus JSON export/import
 - Printing via the browser's native print dialog
