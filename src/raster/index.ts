@@ -548,6 +548,28 @@ export async function rasterizeDocument(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, geometry.widthPx, geometry.heightPx);
 
+  /*
+   * Round stock: clip everything to the die-cut circle.
+   *
+   * The printer still feeds a rectangular area, so ink outside the circle lands
+   * on the backing liner rather than the label -- it smears, and on a
+   * direct-thermal roll it is simply wasted. Clipping here rather than in the
+   * editor means the guarantee holds no matter what produced the document.
+   */
+  if (geometry.shape === "round") {
+    ctx.beginPath();
+    ctx.ellipse(
+      geometry.widthPx / 2,
+      geometry.heightPx / 2,
+      geometry.widthPx / 2,
+      geometry.heightPx / 2,
+      0,
+      0,
+      Math.PI * 2,
+    );
+    ctx.clip();
+  }
+
   for (const el of doc.elements) {
     drawElement(ctx, el, images, createCanvas);
   }

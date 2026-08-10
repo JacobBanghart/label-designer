@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
+import { Ellipse, Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva";
 import type Konva from "konva";
 
 import {
@@ -227,34 +227,69 @@ export function LabelCanvas({ doc, selectedIds, scale, tool, onToolUsed, dispatc
       }}
     >
       <Layer ref={layerRef}>
-        {/* The label boundary. Anything outside it will not print. */}
+        {/* The label surface. Anything outside it will not print. */}
         <Rect
           x={0}
           y={0}
           width={geometry.widthPx}
           height={geometry.heightPx}
-          fill="#ffffff"
+          fill={geometry.shape === "round" ? "#eceef2" : "#ffffff"}
           listening={false}
         />
-
-        {doc.elements.map((element) => (
-          <ElementNode
-            key={element.id}
-            element={element}
-            dispatch={dispatch}
-            onSelect={(additive) =>
-              dispatch(
-                additive
-                  ? { type: "toggleSelect", id: element.id }
-                  : selectedIds.includes(element.id)
-                    ? { type: "selectMany", ids: selectedIds }
-                    : { type: "select", id: element.id },
-              )
-            }
-            onDragPosition={onDragPosition}
-            onDragDone={onDragDone}
+        {geometry.shape === "round" && (
+          <Ellipse
+            x={geometry.widthPx / 2}
+            y={geometry.heightPx / 2}
+            radiusX={geometry.widthPx / 2}
+            radiusY={geometry.heightPx / 2}
+            fill="#ffffff"
+            listening={false}
           />
-        ))}
+        )}
+
+        {/*
+          Clip to the die-cut, mirroring what the rasterizer does. Without this
+          the editor would happily show artwork in the corners of a round label
+          that silently vanishes on print.
+        */}
+        <Group
+          clipFunc={
+            geometry.shape === "round"
+              ? (ctx) => {
+                  ctx.beginPath();
+                  ctx.ellipse(
+                    geometry.widthPx / 2,
+                    geometry.heightPx / 2,
+                    geometry.widthPx / 2,
+                    geometry.heightPx / 2,
+                    0,
+                    0,
+                    Math.PI * 2,
+                  );
+                  ctx.closePath();
+                }
+              : undefined
+          }
+        >
+          {doc.elements.map((element) => (
+            <ElementNode
+              key={element.id}
+              element={element}
+              dispatch={dispatch}
+              onSelect={(additive) =>
+                dispatch(
+                  additive
+                    ? { type: "toggleSelect", id: element.id }
+                    : selectedIds.includes(element.id)
+                      ? { type: "selectMany", ids: selectedIds }
+                      : { type: "select", id: element.id },
+                )
+              }
+              onDragPosition={onDragPosition}
+              onDragDone={onDragDone}
+            />
+          ))}
+        </Group>
 
         {/* Live preview of the stroke being drawn. Not part of the document,
             so it never enters undo history. */}

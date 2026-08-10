@@ -23,7 +23,8 @@ Everything you design lives in your browser.
 
 Currently supported:
 
-- Two label sizes: 4"x6" and 2"x1"
+- Four label sizes: 4"x6", 2"x1", and 1.08"/1.44" round stock, with artwork
+  clipped to the die-cut so nothing prints onto the backing liner
 - An orientation toggle that swaps width/height (e.g. 4x6 -> 6x4), changing
   the actual output dimensions, not just the editing view
 - Rotatable text elements, with drag/resize/rotate handles and a property
@@ -43,9 +44,14 @@ Currently supported:
   continuously, so there is no save button to forget. Plus JSON export/import
 - Printing via the browser's native print dialog
 
-Not yet implemented, in rough priority order: barcodes and QR, round label
-stock, and a direct WebUSB transport that would skip the print dialog on
-supported printers.
+Not yet implemented, in rough priority order: barcodes and QR, and a direct
+WebUSB transport that would skip the print dialog on supported printers.
+
+> **Round label dimensions are unverified.** They map to the Rollo driver's
+> `Round108` / `Round144` media options, read as 1.08" and 1.44" diameters.
+> That reading is inferred from the option names, not measured. Check against
+> your stock before a real run, and correct `LABEL_SIZES` in
+> `src/core/label.ts` if it is wrong.
 
 Barcode support is **deliberately** deferred rather than merely missing --
 barcode management is a design question in its own right, and guessing at it

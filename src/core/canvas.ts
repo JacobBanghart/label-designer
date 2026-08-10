@@ -56,6 +56,8 @@ export interface Ctx2D {
   rect(x: number, y: number, w: number, h: number): void;
   fill(): void;
   stroke(): void;
+  /** Restrict drawing to the current path. Undone by restore(). */
+  clip(): void;
 
   /** Draw a decoded image scaled into the given box. */
   drawImage(image: DecodedImage, x: number, y: number, w: number, h: number): void;

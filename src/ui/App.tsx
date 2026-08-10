@@ -6,7 +6,12 @@ import {
   isTextElement,
   type LabelDocument,
 } from "../core/document.ts";
-import { LABEL_SIZES, resolveGeometry, type LabelSizeId } from "../core/label.ts";
+import {
+  LABEL_SIZES,
+  resolveGeometry,
+  supportsOrientation,
+  type LabelSizeId,
+} from "../core/label.ts";
 import { getTransport } from "../core/transport.ts";
 import { useEditor } from "../editor/store.ts";
 import { createDocument, nextId } from "../editor/operations.ts";
@@ -255,18 +260,20 @@ export function App() {
             ))}
           </select>
 
-          <button
-            type="button"
-            onClick={() =>
-              dispatch({
-                type: "setOrientation",
-                orientation: doc.orientation === "portrait" ? "landscape" : "portrait",
-              })
-            }
-            title="Rotate the whole label, taking its contents with it"
-          >
-            Rotate canvas ({doc.orientation})
-          </button>
+          {supportsOrientation(doc.sizeId) && (
+            <button
+              type="button"
+              onClick={() =>
+                dispatch({
+                  type: "setOrientation",
+                  orientation: doc.orientation === "portrait" ? "landscape" : "portrait",
+                })
+              }
+              title="Rotate the whole label, taking its contents with it"
+            >
+              Rotate canvas ({doc.orientation})
+            </button>
+          )}
         </div>
 
         <div className="group tools">
