@@ -98,6 +98,37 @@ export function parseLibrary(raw: unknown): Library {
   return library;
 }
 
+/**
+ * Give every entry a real position.
+ *
+ * Entries saved before ordering existed come back with a sentinel order, so
+ * they all tie and fall through to the name comparison -- which means the list
+ * can still reshuffle as names change. Backfilling once, on first read, gives
+ * every label a stable slot from then on.
+ *
+ * Existing positions are preserved; unordered entries are appended in name
+ * order so the result is deterministic rather than dependent on object key
+ * iteration.
+ */
+function backfillOrder(library: Library): Library {
+  const unordered = Object.values(library).filter((e) => e.order === Number.MAX_SAFE_INTEGER);
+  if (unordered.length === 0) return library;
+
+  const ordered = Object.values(library).filter((e) => e.order !== Number.MAX_SAFE_INTEGER);
+  let next = ordered.length === 0 ? 0 : Math.max(...ordered.map((e) => e.order)) + 1;
+
+  const byName = [...unordered].sort((a, b) =>
+    a.doc.name.localeCompare(b.doc.name, undefined, { numeric: true, sensitivity: "base" }),
+  );
+  for (const entry of byName) {
+    library[entry.doc.id] = { ...entry, order: next };
+    next += 1;
+  }
+
+  write(LIBRARY_KEY, library);
+  return library;
+}
+
 export function loadLibrary(): Library {
   const library = parseLibrary(readRaw(LIBRARY_KEY));
 
@@ -114,7 +145,7 @@ export function loadLibrary(): Library {
     }
   }
 
-  return library;
+  return backfillOrder(library);
 }
 
 /** Throws StorageFullError if the write did not land. */

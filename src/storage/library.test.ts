@@ -175,3 +175,55 @@ describe("sortedEntries", () => {
     expect(sortedEntries(library).map((entry) => entry.doc.id)).toEqual(["b", "c", "a"]);
   });
 });
+
+describe("order backfill", () => {
+  it("gives pre-ordering entries stable positions on first read", () => {
+    // Entries written before ordering existed have no `order` at all.
+    store.set(
+      "label-designer:library",
+      JSON.stringify({
+        b: { doc: doc("b", "Beta"), updatedAt: 1 },
+        a: { doc: doc("a", "Alpha"), updatedAt: 2 },
+      }),
+    );
+
+    const library = loadLibrary();
+
+    // Deterministic, by name, not by object key order.
+    expect(library.a!.order).toBe(0);
+    expect(library.b!.order).toBe(1);
+  });
+
+  it("persists the backfill so the order does not shift on the next read", () => {
+    store.set(
+      "label-designer:library",
+      JSON.stringify({
+        z: { doc: doc("z", "Zulu"), updatedAt: 1 },
+        m: { doc: doc("m", "Mike"), updatedAt: 2 },
+      }),
+    );
+
+    const first = sortedEntries(loadLibrary()).map((e) => e.doc.id);
+    // Renaming would change a name-based sort but must not move a backfilled one.
+    saveToLibrary({ ...doc("m", "Alpha") });
+    const second = sortedEntries(loadLibrary()).map((e) => e.doc.id);
+
+    expect(second).toEqual(first);
+  });
+
+  it("keeps positions that already exist", () => {
+    store.set(
+      "label-designer:library",
+      JSON.stringify({
+        first: { doc: doc("first"), updatedAt: 1, order: 0 },
+        legacy: { doc: doc("legacy"), updatedAt: 1 },
+      }),
+    );
+
+    const library = loadLibrary();
+
+    expect(library.first!.order).toBe(0);
+    // Appended after, not interleaved.
+    expect(library.legacy!.order).toBe(1);
+  });
+});
