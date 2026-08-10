@@ -1,0 +1,19 @@
+# Label Designer -- direct USB printing for the Rollo thermal printer (09c5:0588)
+#
+# Two conditions must hold before a browser can talk to the printer, and missing
+# either produces the same "could not claim the printer" error:
+#
+#   1. the kernel's usblp module must not hold the interface
+#   2. the logged-in user must be able to open the raw USB device
+#
+# NOTE: this takes the printer away from CUPS. `lp` and the system print dialog
+# will no longer see it. Delete this file and replug to hand it back.
+
+# 1. Detach from usblp as soon as it binds, so the interface is free to claim.
+ACTION=="add|bind", SUBSYSTEM=="usb", DEVTYPE=="usb_interface", DRIVERS=="usblp", ATTRS{idVendor}=="09c5", ATTRS{idProduct}=="0588", RUN+="/bin/sh -c 'echo -n %k > /sys/bus/usb/drivers/usblp/unbind'"
+
+# 2. Grant the active seat's user read/write on the raw device.
+#    uaccess uses a systemd ACL: no group membership, no re-login required.
+#    Deliberately NOT GROUP="plugdev" -- that group does not exist on Arch and
+#    many other distributions, and the rule would silently do nothing.
+SUBSYSTEM=="usb", DEVTYPE=="usb_device", ATTRS{idVendor}=="09c5", ATTRS{idProduct}=="0588", TAG+="uaccess"

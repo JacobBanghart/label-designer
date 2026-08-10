@@ -48,7 +48,18 @@ user must be able to open the raw device. The second one is easy to miss — the
 node is `root:lp` mode 0664, so a normal user gets read-only access and the
 browser fails to claim it with the same error as if the driver still held it.
 
-Create `/etc/udev/rules.d/99-label-designer.rules`, substituting your ids:
+A working rule ships in [`deploy/udev/99-label-designer.rules`](../deploy/udev/99-label-designer.rules).
+Change the two ids to match your printer, then install it:
+
+```sh
+sudo install -m 0644 deploy/udev/99-label-designer.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=usb
+```
+
+Unplug and replug the printer to confirm it applies from a cold start.
+
+For reference, that file contains:
 
 ```udev
 # Detach the printer from usblp so a browser can claim the interface.
