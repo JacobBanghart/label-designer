@@ -12,6 +12,7 @@ import { Group, Layer, Line, Rect, Stage, Text, Transformer } from "react-konva"
 import type Konva from "konva";
 
 import {
+  isImageElement,
   isShapeElement,
   isTextElement,
   type Element,
@@ -21,6 +22,7 @@ import { resolveGeometry } from "../core/label.ts";
 import type { EditorAction } from "../editor/store.ts";
 import { boxElementFromDrag, polylineFromPoints, type ShapeKind } from "../editor/operations.ts";
 import { ShapeNode } from "./ShapeNode.tsx";
+import { ImageNode } from "./ImageNode.tsx";
 import { computeSnap, type Guide } from "../editor/snapping.ts";
 
 /** Magnetic pull radius, in SCREEN pixels; divided by scale at use. */
@@ -392,6 +394,7 @@ function renderContent(element: Element) {
   }
 
   if (isShapeElement(element)) return <ShapeNode element={element} />;
+  if (isImageElement(element)) return <ImageNode element={element} />;
 
   return null;
 }

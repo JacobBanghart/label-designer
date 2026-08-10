@@ -42,12 +42,27 @@ function readRaw(key: string): unknown {
   }
 }
 
-function write(key: string, value: unknown): void {
+/**
+ * Write, reporting whether it worked.
+ *
+ * Failures used to be swallowed entirely. That was tolerable when a design was
+ * a few kilobytes of JSON, but images are data URIs and a label carrying a
+ * couple of photos can exhaust the ~5MB quota. Silently not saving is the worst
+ * possible behaviour there, so callers surface it.
+ */
+function write(key: string, value: unknown): boolean {
   try {
     localStorage.setItem(key, JSON.stringify(value));
+    return true;
   } catch {
-    // Quota or private-mode failure. Losing a save is not worth breaking the
-    // editor over -- the user can still export to a file.
+    return false;
+  }
+}
+
+export class StorageFullError extends Error {
+  constructor() {
+    super("Browser storage is full. Delete a label or remove an image, then try again.");
+    this.name = "StorageFullError";
   }
 }
 
@@ -93,10 +108,12 @@ export function loadLibrary(): Library {
   return library;
 }
 
+/** Throws StorageFullError if the write did not land. */
 export function saveToLibrary(doc: LabelDocument): void {
   const library = loadLibrary();
   library[doc.id] = { doc, updatedAt: Date.now() };
-  write(LIBRARY_KEY, library);
+
+  if (!write(LIBRARY_KEY, library)) throw new StorageFullError();
   write(ACTIVE_KEY, doc.id);
 }
 

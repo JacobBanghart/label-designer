@@ -32,12 +32,15 @@ Currently supported:
   other elements' edges and centres. Hold `Alt` while dragging to suspend it
 - Undo/redo, with drag gestures collapsed into a single history step
 - A live 1-bit preview showing exactly what the printer will burn
+- Image import — drop a file on the label or use the Image button. Choose
+  hard-threshold rendering for logos and line art, or Floyd-Steinberg
+  dithering for photographs, with an invert toggle
 - A library of named labels — create, duplicate, switch, delete. Autosaved
   continuously, so there is no save button to forget. Plus JSON export/import
 - Printing via the browser's native print dialog
 
-Not yet implemented, in rough priority order: barcodes and QR, image import,
-round label stock, and a direct WebUSB transport that would skip the print
+Not yet implemented, in rough priority order: barcodes and QR, round label
+stock, multi-select, and a direct WebUSB transport that would skip the print
 dialog on supported printers.
 
 Barcode support is **deliberately** deferred rather than merely missing --
@@ -131,6 +134,15 @@ headlessly. Konva is only the editor's interaction layer. The cost of that
 split is that the editor and the rasterizer must agree on geometry
 independently -- `src/integration.test.ts` exists to catch it when they
 don't.
+
+### Storage
+
+Designs live in `localStorage`, which browsers cap at roughly 5MB. Imported
+images are downscaled to at most 1218px on their long edge — the printable
+resolution of a 4×6 label at 203 DPI, so nothing visible is lost — but a
+library with many image-heavy labels can still fill the quota. If a save
+fails you get an explicit warning rather than silence; export the label to
+JSON and delete something.
 
 ## Printing
 

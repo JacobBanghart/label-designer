@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isShapeElement, isTextElement, type LabelDocument } from "../core/document.ts";
+import {
+  isImageElement,
+  isShapeElement,
+  isTextElement,
+  type LabelDocument,
+} from "../core/document.ts";
 import { LABEL_SIZES, resolveGeometry, type LabelSizeId } from "../core/label.ts";
 import { getTransport } from "../core/transport.ts";
 import { useEditor } from "../editor/store.ts";
 import { createDocument, nextId } from "../editor/operations.ts";
 import { rasterizeDocument } from "../raster/index.ts";
 import { downloadJson, importJson } from "../storage/local.ts";
+import { createImageElement, readImageFile } from "../editor/importImage.ts";
 import {
   loadActive,
   loadLibrary,
@@ -18,6 +24,7 @@ import {
 import { Inspector } from "./Inspector.tsx";
 import { LabelCanvas, type Tool } from "./LabelCanvas.tsx";
 import { ShapeInspector } from "./ShapeInspector.tsx";
+import { ImageInspector } from "./ImageInspector.tsx";
 import { LibraryPanel } from "./LibraryPanel.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
 import { useElementSize } from "./useElementSize.ts";
@@ -60,9 +67,12 @@ export function App() {
   const { doc, selected, selectedId, dispatch, canUndo, canRedo } = useEditor(initialDoc);
   const [copies, setCopies] = useState(1);
   const [status, setStatus] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [stageRef, stageSize] = useElementSize<HTMLElement>();
+  const imageRef = useRef<HTMLInputElement>(null);
   const [tool, setTool] = useState<Tool>(null);
   const [library, setLibrary] = useState<Library>(() => loadLibrary());
 
@@ -106,9 +116,35 @@ export function App() {
   // from storage during initialisation (see useEditor call above) -- there is
   // never a moment where an empty document could be written over saved work.
   useEffect(() => {
-    saveToLibrary(doc);
-    setLibrary(loadLibrary());
+    try {
+      saveToLibrary(doc);
+      setLibrary(loadLibrary());
+      setSaveError(null);
+    } catch (err) {
+      // Quota exhaustion is realistic once a label carries images. Silently
+      // not saving would be the worst possible response.
+      setSaveError(err instanceof Error ? err.message : "Could not save.");
+    }
   }, [doc]);
+
+  /** Import one or more dropped/selected image files. */
+  const importImages = useCallback(
+    async (files: FileList | File[]) => {
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith("image/")) {
+          setStatus(`${file.name} is not an image.`);
+          continue;
+        }
+        const imported = await readImageFile(file);
+        if (!imported) {
+          setStatus(`Could not read ${file.name}.`);
+          continue;
+        }
+        dispatch({ type: "addElement", element: createImageElement(doc, imported) });
+      }
+    },
+    [dispatch, doc],
+  );
 
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
 
@@ -243,6 +279,13 @@ export function App() {
           <button type="button" onClick={() => dispatch({ type: "addText" })} title="Add text (T)">
             Text
           </button>
+          <button
+            type="button"
+            onClick={() => imageRef.current?.click()}
+            title="Add an image (or drop one on the label)"
+          >
+            Image
+          </button>
           {TOOLS.map(({ kind, label, hint }) => (
             <button
               key={kind}
@@ -285,6 +328,18 @@ export function App() {
             }}
           />
 
+          <input
+            ref={imageRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={async (event) => {
+              if (event.target.files) await importImages(event.target.files);
+              event.target.value = "";
+            }}
+          />
+
           <label htmlFor="copies">Copies</label>
           <input
             id="copies"
@@ -301,7 +356,20 @@ export function App() {
       </header>
 
       <div className="body">
-        <main className="stage-area" ref={stageRef}>
+        <main
+          className={dragOver ? "stage-area drag-over" : "stage-area"}
+          ref={stageRef}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={async (event) => {
+            event.preventDefault();
+            setDragOver(false);
+            if (event.dataTransfer.files.length) await importImages(event.dataTransfer.files);
+          }}
+        >
           <div className="stage-meta">
             {geometry.widthIn}&Prime; &times; {geometry.heightIn}&Prime; &middot; {geometry.widthPx}{" "}
             &times; {geometry.heightPx} px @ {doc.dpi} DPI
@@ -315,6 +383,7 @@ export function App() {
             dispatch={dispatch}
           />
           {status && <p className="status">{status}</p>}
+          {saveError && <p className="error">{saveError}</p>}
         </main>
 
         <aside className="sidebar">
@@ -322,6 +391,8 @@ export function App() {
             <Inspector element={selected} dispatch={dispatch} />
           ) : selected && isShapeElement(selected) ? (
             <ShapeInspector element={selected} dispatch={dispatch} />
+          ) : selected && isImageElement(selected) ? (
+            <ImageInspector element={selected} dispatch={dispatch} />
           ) : (
             <div className="empty">
               <p>Nothing selected.</p>

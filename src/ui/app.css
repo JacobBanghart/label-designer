@@ -303,3 +303,13 @@ input[type="number"] {
   color: var(--danger);
   border-color: #e5c9c6;
 }
+
+.stage-area.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -12px;
+  background: #f2f1ff;
+}
+
+.field input[type="range"] {
+  padding: 0;
+}
