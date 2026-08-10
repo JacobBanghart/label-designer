@@ -6,8 +6,10 @@
 #   1. the kernel's usblp module must not hold the interface
 #   2. the logged-in user must be able to open the raw USB device
 #
-# NOTE: this takes the printer away from CUPS. `lp` and the system print dialog
-# will no longer see it. Delete this file and replug to hand it back.
+# This does NOT take the printer away from CUPS: modern CUPS uses libusb and
+# detaches the kernel driver itself, so `lp` and the print dialog keep working.
+# The two cannot hold the USB interface simultaneously, but both release after
+# each job, so alternating between them is fine.
 
 # 1. Detach from usblp as soon as it binds, so the interface is free to claim.
 ACTION=="add|bind", SUBSYSTEM=="usb", DEVTYPE=="usb_interface", DRIVERS=="usblp", ATTRS{idVendor}=="09c5", ATTRS{idProduct}=="0588", RUN+="/bin/sh -c 'echo -n %k > /sys/bus/usb/drivers/usblp/unbind'"

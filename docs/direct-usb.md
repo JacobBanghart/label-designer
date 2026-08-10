@@ -31,10 +31,14 @@ WebUSB, and there is no polyfill; those browsers get the print dialog instead.
 This is the one real cost. The kernel's `usblp` module claims printer-class
 devices, and a browser cannot claim an interface the OS is holding.
 
-**Detaching the printer from `usblp` also removes it from CUPS.** You are
-choosing direct printing _instead of_ system printing for that device, not as
-well as it. If you want both, keep a second printer or re-enable the module when
-you need CUPS.
+**This does not take the printer away from CUPS.** Modern CUPS reaches USB
+printers through libusb and detaches the kernel driver itself when it needs to,
+so `lp` and the system print dialog keep working. Verified by running the CUPS
+USB backend with `usblp` unbound: it still enumerates the printer.
+
+What you cannot do is use both _at the same instant_ — whichever side claims the
+USB interface first holds it until it releases. Both release when done, so
+alternating between direct printing and the print dialog is fine.
 
 Find your printer's ids:
 
