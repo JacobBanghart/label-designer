@@ -16,6 +16,14 @@ import { isPolylineElement, type ShapeElement } from "../core/document.ts";
 
 const INK = "#000000";
 
+/**
+ * Minimum grabbable thickness for an outline or line, in label pixels.
+ *
+ * A 2px stroke on an 812px label is essentially impossible to hit with a mouse
+ * once the label is scaled to fit the screen.
+ */
+const MIN_HIT_STROKE = 14;
+
 interface Props {
   element: ShapeElement;
 }
@@ -32,7 +40,7 @@ export function ShapeNode({ element }: Props) {
         fill={element.filled ? INK : undefined}
         stroke={strokeWidthPx > 0 ? INK : undefined}
         strokeWidth={strokeWidthPx}
-        listening={false}
+        hitStrokeWidth={Math.max(strokeWidthPx, MIN_HIT_STROKE)}
       />
     );
   }
@@ -47,7 +55,7 @@ export function ShapeNode({ element }: Props) {
         fill={element.filled ? INK : undefined}
         stroke={strokeWidthPx > 0 ? INK : undefined}
         strokeWidth={strokeWidthPx}
-        listening={false}
+        hitStrokeWidth={Math.max(strokeWidthPx, MIN_HIT_STROKE)}
       />
     );
   }
@@ -61,11 +69,12 @@ export function ShapeNode({ element }: Props) {
     if (points.length < 4) return null;
 
     return (
-      <Group listening={false}>
+      <Group>
         <Line
           points={points}
           stroke={INK}
           strokeWidth={strokeWidthPx}
+          hitStrokeWidth={Math.max(strokeWidthPx, MIN_HIT_STROKE)}
           lineCap="round"
           lineJoin="round"
           // Freehand is pen input, so smooth it; a straight line must not bow.

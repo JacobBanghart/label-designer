@@ -23,7 +23,7 @@ import type { EditorAction } from "../editor/store.ts";
 import { boxElementFromDrag, polylineFromPoints, type ShapeKind } from "../editor/operations.ts";
 import { ShapeNode } from "./ShapeNode.tsx";
 import { ImageNode } from "./ImageNode.tsx";
-import { computeSnap, type Guide } from "../editor/snapping.ts";
+import { boundingBox, computeSnap, type Guide } from "../editor/snapping.ts";
 
 /** Magnetic pull radius, in SCREEN pixels; divided by scale at use. */
 const SNAP_SCREEN_PX = 7;
@@ -33,14 +33,14 @@ export type Tool = ShapeKind | null;
 
 interface Props {
   doc: LabelDocument;
-  selectedId: string | null;
+  selectedIds: readonly string[];
   scale: number;
   tool: Tool;
   onToolUsed: () => void;
   dispatch: (action: EditorAction) => void;
 }
 
-export function LabelCanvas({ doc, selectedId, scale, tool, onToolUsed, dispatch }: Props) {
+export function LabelCanvas({ doc, selectedIds, scale, tool, onToolUsed, dispatch }: Props) {
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
   const transformerRef = useRef<Konva.Transformer>(null);
   const layerRef = useRef<Konva.Layer>(null);
@@ -53,6 +53,9 @@ export function LabelCanvas({ doc, selectedId, scale, tool, onToolUsed, dispatch
 
   // Alignment guides for the drag in progress. Also view-only state.
   const [guides, setGuides] = useState<readonly Guide[]>([]);
+
+  // Rubber-band rectangle, in label coordinates, while selecting.
+  const [marquee, setMarquee] = useState<[number, number, number, number] | null>(null);
 
   /*
    * Snap an element being dragged, and record the guides to draw.
@@ -73,6 +76,37 @@ export function LabelCanvas({ doc, selectedId, scale, tool, onToolUsed, dispatch
 
   function onDragDone() {
     setGuides([]);
+  }
+
+  /**
+   * Finish a rubber-band selection.
+   *
+   * Selects anything the band INTERSECTS rather than fully contains -- on a
+   * label the elements are large relative to the canvas, and requiring full
+   * containment makes the gesture feel broken.
+   */
+  function commitMarquee(additive: boolean) {
+    if (!marquee) return;
+    const [x1, y1, x2, y2] = marquee;
+    setMarquee(null);
+
+    const left = Math.min(x1, x2);
+    const right = Math.max(x1, x2);
+    const top = Math.min(y1, y2);
+    const bottom = Math.max(y1, y2);
+
+    // A click rather than a drag: leave the selection as the mousedown set it.
+    if (right - left < 3 && bottom - top < 3) return;
+
+    const hit = doc.elements
+      .filter((element) => {
+        const box = boundingBox(element);
+        return box.left < right && box.right > left && box.top < bottom && box.bottom > top;
+      })
+      .map((element) => element.id);
+
+    const ids = additive ? [...new Set([...selectedIds, ...hit])] : hit;
+    dispatch({ type: "selectMany", ids });
   }
 
   // Holding Alt suspends snapping, the usual convention for nudging something
@@ -141,10 +175,12 @@ export function LabelCanvas({ doc, selectedId, scale, tool, onToolUsed, dispatch
     const layer = layerRef.current;
     if (!transformer || !layer) return;
 
-    const node = selectedId ? layer.findOne(`#${selectedId}`) : null;
-    transformer.nodes(node ? [node] : []);
+    const nodes = selectedIds
+      .map((id) => layer.findOne(`#${id}`))
+      .filter((node): node is Konva.Node => Boolean(node));
+    transformer.nodes(nodes);
     transformer.getLayer()?.batchDraw();
-  }, [selectedId, doc]);
+  }, [selectedIds, doc]);
 
   return (
     <Stage
@@ -158,12 +194,29 @@ export function LabelCanvas({ doc, selectedId, scale, tool, onToolUsed, dispatch
           handleDrawStart();
           return;
         }
-        // Clicking empty space clears the selection.
-        if (event.target === event.target.getStage()) dispatch({ type: "select", id: null });
+        if (event.target !== event.target.getStage()) return;
+
+        // Empty space: begin a rubber-band selection. Shift keeps the current
+        // selection so a marquee can extend it.
+        if (!event.evt.shiftKey) dispatch({ type: "select", id: null });
+        const point = pointerInLabelSpace();
+        if (point) setMarquee([point[0], point[1], point[0], point[1]]);
       }}
-      onMouseMove={handleDrawMove}
-      onMouseUp={handleDrawEnd}
-      onMouseLeave={handleDrawEnd}
+      onMouseMove={(event) => {
+        handleDrawMove();
+        if (!marquee) return;
+        const point = pointerInLabelSpace();
+        if (point) setMarquee([marquee[0], marquee[1], point[0], point[1]]);
+        void event;
+      }}
+      onMouseUp={(event) => {
+        handleDrawEnd();
+        commitMarquee(event.evt.shiftKey);
+      }}
+      onMouseLeave={() => {
+        handleDrawEnd();
+        setMarquee(null);
+      }}
       onTouchStart={handleDrawStart}
       onTouchMove={handleDrawMove}
       onTouchEnd={handleDrawEnd}
@@ -189,7 +242,15 @@ export function LabelCanvas({ doc, selectedId, scale, tool, onToolUsed, dispatch
             key={element.id}
             element={element}
             dispatch={dispatch}
-            onSelect={() => dispatch({ type: "select", id: element.id })}
+            onSelect={(additive) =>
+              dispatch(
+                additive
+                  ? { type: "toggleSelect", id: element.id }
+                  : selectedIds.includes(element.id)
+                    ? { type: "selectMany", ids: selectedIds }
+                    : { type: "select", id: element.id },
+              )
+            }
             onDragPosition={onDragPosition}
             onDragDone={onDragDone}
           />
@@ -198,6 +259,19 @@ export function LabelCanvas({ doc, selectedId, scale, tool, onToolUsed, dispatch
         {/* Live preview of the stroke being drawn. Not part of the document,
             so it never enters undo history. */}
         {draft && tool && <DraftPreview tool={tool} points={draft} doc={doc} />}
+
+        {marquee && (
+          <Rect
+            x={Math.min(marquee[0], marquee[2])}
+            y={Math.min(marquee[1], marquee[3])}
+            width={Math.abs(marquee[2] - marquee[0])}
+            height={Math.abs(marquee[3] - marquee[1])}
+            fill="rgba(79,70,229,0.08)"
+            stroke="#4f46e5"
+            strokeWidth={1 / scale}
+            listening={false}
+          />
+        )}
 
         {guides.map((guide) => (
           <Line
@@ -272,7 +346,7 @@ function DraftPreview({
 interface ElementNodeProps {
   element: Element;
   dispatch: (action: EditorAction) => void;
-  onSelect: () => void;
+  onSelect: (additive: boolean) => void;
   onDragPosition: (moving: Element) => { dx: number; dy: number };
   onDragDone: () => void;
 }
@@ -310,10 +384,10 @@ function ElementNode({
       height={element.heightPx}
       rotation={element.rotation}
       draggable
-      onMouseDown={onSelect}
-      onTap={onSelect}
-      onDragStart={() => {
-        onSelect();
+      onMouseDown={(event) => onSelect(event.evt.shiftKey)}
+      onTap={() => onSelect(false)}
+      onDragStart={(event) => {
+        onSelect(event.evt.shiftKey);
         dispatch({ type: "beginGesture" });
       }}
       onDragMove={(event) => {
@@ -364,8 +438,16 @@ function ElementNode({
         });
       }}
     >
-      {/* Invisible hit area so the whole box is grabbable, not just the ink. */}
-      <Rect width={element.widthPx} height={element.heightPx} fill="transparent" />
+      {/*
+        Text and images are solid content, so the whole box should be grabbable.
+        Shapes deliberately are NOT: a box-wide hit area turns an outline-only
+        rectangle into a click sink that swallows every empty-space click inside
+        it -- which makes rubber-band selection impossible under a frame or
+        background box. Shapes hit-test against their own stroke and fill.
+      */}
+      {isShapeElement(element) ? null : (
+        <Rect width={element.widthPx} height={element.heightPx} fill="transparent" />
+      )}
       {content}
     </Group>
   );

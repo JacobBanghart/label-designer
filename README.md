@@ -33,6 +33,7 @@ Currently supported:
   width, corner radius, and arrowhead size
 - Snapping with alignment guides — to label edges and centre lines, and to
   other elements' edges and centres. Hold `Alt` while dragging to suspend it
+- Multi-select by shift-click or rubber-band drag, with align and distribute
 - Undo/redo, with drag gestures collapsed into a single history step
 - A live 1-bit preview showing exactly what the printer will burn
 - Image import — drop a file on the label or use the Image button. Choose
@@ -43,8 +44,8 @@ Currently supported:
 - Printing via the browser's native print dialog
 
 Not yet implemented, in rough priority order: barcodes and QR, round label
-stock, multi-select, and a direct WebUSB transport that would skip the print
-dialog on supported printers.
+stock, and a direct WebUSB transport that would skip the print dialog on
+supported printers.
 
 Barcode support is **deliberately** deferred rather than merely missing --
 barcode management is a design question in its own right, and guessing at it
@@ -66,6 +67,8 @@ now would mean a migration later.
 | `L` / `A`                         | Line / arrow              |
 | `P`                               | Freehand pen              |
 | Hold `Alt` while dragging         | Suspend snapping          |
+| `Ctrl/Cmd+A`                      | Select all                |
+| `Shift`+click                     | Add/remove from selection |
 
 ## Self-hosting
 

@@ -33,10 +33,12 @@ import {
   updateElement,
   type ShapeKind,
 } from "./operations.ts";
+import { alignElements, distributeElements, type AlignEdge, type DistributeAxis } from "./align.ts";
 
 export interface EditorState {
   history: History<LabelDocument>;
-  selectedId: string | null;
+  /** Paint order is irrelevant here; this is a set, kept as an array for React. */
+  selectedIds: readonly string[];
 }
 
 export type EditorAction =
@@ -51,6 +53,10 @@ export type EditorAction =
   | { type: "setOrientation"; orientation: Orientation }
   | { type: "rename"; name: string }
   | { type: "select"; id: string | null }
+  | { type: "toggleSelect"; id: string }
+  | { type: "selectMany"; ids: readonly string[] }
+  | { type: "align"; edge: AlignEdge }
+  | { type: "distribute"; axis: DistributeAxis }
   | { type: "duplicate"; id: string }
   | { type: "nudge"; id: string; dx: number; dy: number }
   | { type: "beginGesture" }
@@ -62,13 +68,13 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
 
   switch (action.type) {
     case "load":
-      return { history: createHistory(action.doc), selectedId: null };
+      return { history: createHistory(action.doc), selectedIds: [] };
 
     case "addText": {
       const element = createTextElement(doc);
       return {
         history: push(state.history, addElement(doc, element)),
-        selectedId: element.id,
+        selectedIds: [element.id],
       };
     }
 
@@ -76,7 +82,7 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
       const element = createShapeElement(doc, action.kind);
       return {
         history: push(state.history, addElement(doc, element)),
-        selectedId: element.id,
+        selectedIds: [element.id],
       };
     }
 
@@ -84,7 +90,7 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
     case "addElement":
       return {
         history: push(state.history, addElement(doc, action.element)),
-        selectedId: action.element.id,
+        selectedIds: [action.element.id],
       };
 
     case "update": {
@@ -100,7 +106,7 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
     case "remove":
       return {
         history: push(state.history, removeElement(doc, action.id)),
-        selectedId: state.selectedId === action.id ? null : state.selectedId,
+        selectedIds: state.selectedIds.filter((id) => id !== action.id),
       };
 
     case "reorder":
@@ -119,14 +125,37 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
       return { ...state, history: push(state.history, renameDocument(doc, action.name)) };
 
     case "select":
-      return { ...state, selectedId: action.id };
+      return { ...state, selectedIds: action.id === null ? [] : [action.id] };
+
+    case "toggleSelect":
+      return {
+        ...state,
+        selectedIds: state.selectedIds.includes(action.id)
+          ? state.selectedIds.filter((id) => id !== action.id)
+          : [...state.selectedIds, action.id],
+      };
+
+    case "selectMany":
+      return { ...state, selectedIds: action.ids };
+
+    case "align":
+      return {
+        ...state,
+        history: push(state.history, alignElements(doc, state.selectedIds, action.edge)),
+      };
+
+    case "distribute":
+      return {
+        ...state,
+        history: push(state.history, distributeElements(doc, state.selectedIds, action.axis)),
+      };
 
     case "duplicate": {
       const source = doc.elements.find((el) => el.id === action.id);
       if (!source) return state;
       // Offset slightly so the copy is visibly distinct from its original.
       const copy = { ...source, id: nextId(source.kind), x: source.x + 16, y: source.y + 16 };
-      return { history: push(state.history, addElement(doc, copy)), selectedId: copy.id };
+      return { history: push(state.history, addElement(doc, copy)), selectedIds: [copy.id] };
     }
 
     case "nudge": {
@@ -146,36 +175,38 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
 
     case "undo": {
       const history = undo(state.history);
-      return { history, selectedId: stillPresent(history.present, state.selectedId) };
+      return { history, selectedIds: stillPresent(history.present, state.selectedIds) };
     }
 
     case "redo": {
       const history = redo(state.history);
-      return { history, selectedId: stillPresent(history.present, state.selectedId) };
+      return { history, selectedIds: stillPresent(history.present, state.selectedIds) };
     }
   }
 }
 
-/** Drop a selection that no longer exists after a history jump. */
-function stillPresent(doc: LabelDocument, id: string | null): string | null {
-  if (id === null) return null;
-  return doc.elements.some((el) => el.id === id) ? id : null;
+/** Drop selected ids that no longer exist after a history jump. */
+function stillPresent(doc: LabelDocument, ids: readonly string[]): readonly string[] {
+  return ids.filter((id) => doc.elements.some((el) => el.id === id));
 }
 
 export function useEditor(initial?: LabelDocument) {
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
     history: createHistory(initial ?? createDocument()),
-    selectedId: null,
+    selectedIds: [],
   }));
 
   const doc = state.history.present;
 
-  const selected = useMemo(
-    () => doc.elements.find((el) => el.id === state.selectedId) ?? null,
-    [doc, state.selectedId],
+  const selectedIds = state.selectedIds;
+
+  const selectedElements = useMemo(
+    () => doc.elements.filter((el) => selectedIds.includes(el.id)),
+    [doc, selectedIds],
   );
 
-  const selectedId = state.selectedId;
+  /** The single selected element, or null when zero or many are selected. */
+  const selected = selectedElements.length === 1 ? selectedElements[0]! : null;
 
   /**
    * Keyboard shortcuts.
@@ -200,9 +231,12 @@ export function useEditor(initial?: LabelDocument) {
         } else if (key === "y") {
           event.preventDefault();
           dispatch({ type: "redo" });
-        } else if (key === "d" && selectedId) {
+        } else if (key === "a") {
           event.preventDefault();
-          dispatch({ type: "duplicate", id: selectedId });
+          dispatch({ type: "selectMany", ids: doc.elements.map((el) => el.id) });
+        } else if (key === "d" && selectedIds.length > 0) {
+          event.preventDefault();
+          for (const id of selectedIds) dispatch({ type: "duplicate", id });
         }
         return;
       }
@@ -212,11 +246,11 @@ export function useEditor(initial?: LabelDocument) {
         return;
       }
 
-      if (!selectedId) return;
+      if (selectedIds.length === 0) return;
 
       if (key === "delete" || key === "backspace") {
         event.preventDefault();
-        dispatch({ type: "remove", id: selectedId });
+        for (const id of selectedIds) dispatch({ type: "remove", id });
         return;
       }
 
@@ -231,18 +265,19 @@ export function useEditor(initial?: LabelDocument) {
       const delta = deltas[key];
       if (delta) {
         event.preventDefault();
-        dispatch({ type: "nudge", id: selectedId, dx: delta[0], dy: delta[1] });
+        for (const id of selectedIds) dispatch({ type: "nudge", id, dx: delta[0], dy: delta[1] });
       }
     }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedId]);
+  }, [selectedIds, doc.elements]);
 
   return {
     doc,
     selected,
-    selectedId: state.selectedId,
+    selectedElements,
+    selectedIds,
     dispatch,
     canUndo: canUndo(state.history),
     canRedo: canRedo(state.history),

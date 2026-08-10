@@ -25,6 +25,7 @@ import { Inspector } from "./Inspector.tsx";
 import { LabelCanvas, type Tool } from "./LabelCanvas.tsx";
 import { ShapeInspector } from "./ShapeInspector.tsx";
 import { ImageInspector } from "./ImageInspector.tsx";
+import { MultiInspector } from "./MultiInspector.tsx";
 import { LibraryPanel } from "./LibraryPanel.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
 import { useElementSize } from "./useElementSize.ts";
@@ -64,7 +65,8 @@ export function App() {
    * empty doc straight back. Seeding means no empty document ever exists.
    */
   const [initialDoc] = useState(() => loadActive() ?? undefined);
-  const { doc, selected, selectedId, dispatch, canUndo, canRedo } = useEditor(initialDoc);
+  const { doc, selected, selectedElements, selectedIds, dispatch, canUndo, canRedo } =
+    useEditor(initialDoc);
   const [copies, setCopies] = useState(1);
   const [status, setStatus] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -376,7 +378,7 @@ export function App() {
           </div>
           <LabelCanvas
             doc={doc}
-            selectedId={selectedId}
+            selectedIds={selectedIds}
             scale={scale}
             tool={tool}
             onToolUsed={() => setTool(null)}
@@ -387,7 +389,9 @@ export function App() {
         </main>
 
         <aside className="sidebar">
-          {selected && isTextElement(selected) ? (
+          {selectedElements.length > 1 ? (
+            <MultiInspector elements={selectedElements} dispatch={dispatch} />
+          ) : selected && isTextElement(selected) ? (
             <Inspector element={selected} dispatch={dispatch} />
           ) : selected && isShapeElement(selected) ? (
             <ShapeInspector element={selected} dispatch={dispatch} />
