@@ -47,16 +47,12 @@ Currently supported:
   same rasterizer as printing, so an exported file is what the printer receives
 - A library of named labels — create, duplicate, switch, delete. Autosaved
   continuously, so there is no save button to forget. Plus JSON export/import
-- Printing via the browser's native print dialog
+- **Direct USB printing** for TSPL printers (Chrome/Edge) — no print dialog, no
+  CUPS, no vendor driver, with darkness, speed, rotation and registration offset
+  under your control. See [docs/direct-usb.md](docs/direct-usb.md)
+- Printing via the browser's native print dialog, for everything else
 
 Not yet implemented: barcodes and QR.
-
-A direct WebUSB transport that skips the print dialog was investigated and
-**shelved** — see [docs/webusb-spike.md](docs/webusb-spike.md). Short version:
-the browser permits it, but claiming the device costs the user their working
-CUPS/spooler print path on every platform, and this printer's protocol is
-undocumented. The architecture accommodates it later without changes if that
-calculus ever shifts.
 
 > **Round label dimensions are unverified.** They map to the Rollo driver's
 > `Round108` / `Round144` media options, read as 1.08" and 1.44" diameters.
@@ -184,6 +180,17 @@ with the Import button to see a realistic design. Exported labels are plain
 JSON and can be committed, diffed, and shared.
 
 ## Printing
+
+Two routes, and the direct one is better where it works.
+
+**Direct USB** speaks TSPL straight to the printer over WebUSB. Nothing sits
+between the app and the hardware, so the settings a driver would normally hide —
+rotation, darkness, media gap, registration offset — are yours. Chrome/Edge
+only, and on Linux the printer must be detached from the `usblp` kernel module
+first. See [docs/direct-usb.md](docs/direct-usb.md).
+
+**Print dialog** works everywhere and needs no setup, but every layer it passes
+through is a layer that can alter your output.
 
 Output is rendered as a 1-bit raster at 203 DPI (the resolution of common
 desktop thermal printers, e.g. the Rollo). This is real, fixed-resolution

@@ -1,7 +1,19 @@
 # WebUSB spike: can we skip the print dialog?
 
-**Status:** research complete, no code written. **Recommendation: do not build
-this yet, and never for the Rollo specifically.**
+> **SUPERSEDED — and its central conclusion was wrong.**
+>
+> This spike claimed the Rollo's protocol was "undocumented proprietary raster"
+> and recommended never building direct USB for it. That was inferred from the
+> driver's _option names_, never checked. Running `strings` on the vendor filter
+> takes thirty seconds and shows plain **TSPL**: `SIZE`, `GAP`, `DENSITY`,
+> `DIRECTION`, `BITMAP`, `PRINT`. Direct USB is implemented and working — see
+> [direct-usb.md](direct-usb.md).
+>
+> Kept as a record of how a plausible inference, left unverified, blocked the
+> right solution for most of a day. The Linux `usblp` and Windows `usbprint.sys`
+> findings below are still accurate.
+
+**Original status:** research complete, no code written.
 
 The plan was always that `WebUsbTransport` would slot in behind the existing
 `PrintTransport` interface and let supported printers bypass the browser print

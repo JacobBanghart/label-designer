@@ -19,8 +19,24 @@ export interface TransportCaps {
   usesSystemDialog: boolean;
 }
 
+/** Quarter turns applied to the output at print time. */
+export type PrintRotation = 0 | 90 | 180 | 270;
+
 export interface PrintOptions {
   copies: number;
+  /**
+   * Rotate the output before sending it to the printer.
+   *
+   * Compensation for printer quirks we cannot otherwise reach. Thermal drivers
+   * routinely rotate certain media -- the reference Rollo turns 2x1 stock 180
+   * degrees while leaving 4x6 alone -- and a browser has no way to set a vendor
+   * driver option. Doing it here means the fix travels with the label instead of
+   * requiring every user to hand-build a CUPS queue.
+   *
+   * Print-time only: exported files stay unrotated, since they are archives and
+   * may go to a different printer.
+   */
+  rotation?: PrintRotation;
 }
 
 export interface PrintResult {

@@ -92,27 +92,50 @@ function printRasterViaHtml(raster: MonoRaster, options: PrintOptions): Promise<
         const widthIn = raster.widthPx / raster.dpi;
         const heightIn = raster.heightPx / raster.dpi;
         const copies = Math.max(1, Math.round(options.copies));
+        const rotation = options.rotation ?? 0;
 
-        const pages = Array.from({ length: copies }, () => `<img src="${dataUrl}" alt="">`).join(
-          "",
-        );
+        /*
+         * A quarter turn swaps which way the page runs, so the @page size has to
+         * swap with it -- otherwise the browser scales the content to fit a page
+         * of the wrong shape, which is the failure this whole feature exists to
+         * avoid.
+         */
+        const quarter = rotation === 90 || rotation === 270;
+        const pageW = quarter ? heightIn : widthIn;
+        const pageH = quarter ? widthIn : heightIn;
+
+        const pages = Array.from(
+          { length: copies },
+          () => `<div class="page"><img src="${dataUrl}" alt=""></div>`,
+        ).join("");
 
         const html = `<!doctype html><html><head><meta charset="utf-8"><style>
-          @page { size: ${widthIn}in ${heightIn}in; margin: 0; }
+          @page { size: ${pageW}in ${pageH}in; margin: 0; }
           html, body { margin: 0; padding: 0; background: #fff; }
-          img {
-            display: block;
+          .page {
+            width: ${pageW}in;
+            height: ${pageH}in;
+            position: relative;
+            overflow: hidden;
+            page-break-after: always;
+            break-after: page;
+          }
+          .page:last-child { page-break-after: auto; break-after: auto; }
+          .page img {
+            position: absolute;
+            left: 50%;
+            top: 50%;
             width: ${widthIn}in;
             height: ${heightIn}in;
+            /* Rotate about the centre so the artwork stays centred on the page
+               whichever way it is turned. */
+            transform: translate(-50%, -50%) rotate(${rotation}deg);
             /* Never smooth a 1-bit image; show the real dots. */
             image-rendering: pixelated;
             /* Stop the browser lightening blacks to save ink. */
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
-            page-break-after: always;
-            break-after: page;
           }
-          img:last-child { page-break-after: auto; break-after: auto; }
         </style></head><body>${pages}</body></html>`;
 
         const iframe = document.createElement("iframe");

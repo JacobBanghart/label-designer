@@ -38,6 +38,7 @@ import { ShapeInspector } from "./ShapeInspector.tsx";
 import { ImageInspector } from "./ImageInspector.tsx";
 import { MultiInspector } from "./MultiInspector.tsx";
 import { LibraryPanel } from "./LibraryPanel.tsx";
+import { PrinterPanel } from "./PrinterPanel.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
 import { InlineTextEditor } from "./InlineTextEditor.tsx";
 import { useElementSize } from "./useElementSize.ts";
@@ -93,6 +94,7 @@ export function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [unit, setUnit] = useDisplayUnit();
+  const [usbConnected, setUsbConnected] = useState(false);
   const [library, setLibrary] = useState<Library>(() => loadLibrary());
 
   /*
@@ -242,7 +244,9 @@ export function App() {
   );
 
   const handlePrint = useCallback(async () => {
-    const transport = getTransport("pdf");
+    // Prefer the direct connection when there is one: it skips the dialog, the
+    // OS driver, and every layer that has caused a printing bug here.
+    const transport = getTransport(usbConnected ? "webusb" : "pdf");
     if (!transport) {
       setStatus("No print transport registered.");
       return;
@@ -257,7 +261,7 @@ export function App() {
     } catch (err) {
       setStatus(`Print failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [doc, copies]);
+  }, [doc, copies, usbConnected]);
 
   return (
     <div className="app">
@@ -453,8 +457,17 @@ export function App() {
             value={copies}
             onChange={(event) => setCopies(Math.max(1, Number(event.target.value) || 1))}
           />
-          <button type="button" className="primary" onClick={handlePrint}>
-            Print
+          <button
+            type="button"
+            className="primary"
+            onClick={handlePrint}
+            title={
+              usbConnected
+                ? "Send straight to the connected printer, no dialog"
+                : "Open the system print dialog"
+            }
+          >
+            {usbConnected ? "Print (USB)" : "Print"}
           </button>
         </div>
       </header>
@@ -574,6 +587,8 @@ export function App() {
               </p>
             </div>
           )}
+
+          <PrinterPanel onConnectedChange={setUsbConnected} />
 
           <LibraryPanel
             library={library}
