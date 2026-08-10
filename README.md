@@ -37,6 +37,8 @@ Currently supported:
 - Multi-select by shift-click or rubber-band drag, with align and distribute
 - Undo/redo, with drag gestures collapsed into a single history step
 - A live 1-bit preview showing exactly what the printer will burn
+- A built-in **Test pattern** — a tonal ramp plus an 11-step wedge, for checking
+  how greys survive 1-bit conversion at your printer's darkness setting
 - Image import — drop a file on the label or use the Image button. Choose
   hard-threshold rendering for logos and line art, or Floyd-Steinberg
   dithering for photographs, with an invert toggle

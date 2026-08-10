@@ -19,6 +19,7 @@ import { outOfBoundsIds } from "../editor/bounds.ts";
 import { rasterizeDocument } from "../raster/index.ts";
 import { downloadJson, importJson } from "../storage/local.ts";
 import { createImageElement, readImageFile } from "../editor/importImage.ts";
+import { createTestPatternElement } from "../editor/testPattern.ts";
 import {
   loadActive,
   loadLibrary,
@@ -323,6 +324,16 @@ export function App() {
             title="Add an image (or drop one on the label)"
           >
             Image
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const element = createTestPatternElement(doc);
+              if (element) dispatch({ type: "addElement", element });
+            }}
+            title="Add a gradient and step wedge for checking 1-bit output"
+          >
+            Test pattern
           </button>
           {TOOLS.map(({ kind, label, hint }) => (
             <button
