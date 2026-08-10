@@ -44,8 +44,14 @@ Currently supported:
   continuously, so there is no save button to forget. Plus JSON export/import
 - Printing via the browser's native print dialog
 
-Not yet implemented, in rough priority order: barcodes and QR, and a direct
-WebUSB transport that would skip the print dialog on supported printers.
+Not yet implemented: barcodes and QR.
+
+A direct WebUSB transport that skips the print dialog was investigated and
+**shelved** — see [docs/webusb-spike.md](docs/webusb-spike.md). Short version:
+the browser permits it, but claiming the device costs the user their working
+CUPS/spooler print path on every platform, and this printer's protocol is
+undocumented. The architecture accommodates it later without changes if that
+calculus ever shifts.
 
 > **Round label dimensions are unverified.** They map to the Rollo driver's
 > `Round108` / `Round144` media options, read as 1.08" and 1.44" diameters.
