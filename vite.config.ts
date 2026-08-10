@@ -5,6 +5,9 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "node",
+    // Agent worktrees live under .claude/ and contain partial checkouts, whose
+    // unimplemented contract tests would otherwise fail the trunk's test run.
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.claude/**"],
   },
   staged: {
     "*": "vp check --fix",
