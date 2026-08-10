@@ -2,6 +2,9 @@
 
 A browser-based, label-size-aware canvas editor for thermal printers.
 
+![Label Designer editing a 4x6 shipping label, with the 1-bit printer preview
+in the sidebar](docs/screenshot.jpg)
+
 ## Why
 
 Most tools for laying out shipping/product labels fall into one of two
@@ -144,6 +147,12 @@ library with many image-heavy labels can still fill the quota. If a save
 fails you get an explicit warning rather than silence; export the label to
 JSON and delete something.
 
+## Examples
+
+`examples/simic-order-label.json` is a complete 4×6 order label — import it
+with the Import button to see a realistic design. Exported labels are plain
+JSON and can be committed, diffed, and shared.
+
 ## Printing
 
 Output is rendered as a 1-bit raster at 203 DPI (the resolution of common
@@ -156,3 +165,7 @@ the printer driver feels like.
 whatever page size the dialog thinks you're printing to — on a thermal
 label this resampling ruins crisp text and turns fine detail into mush.
 Always print at actual size / 100% scale, never "fit to page."
+
+## License
+
+MIT — see [LICENSE](LICENSE).
