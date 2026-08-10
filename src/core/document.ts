@@ -83,19 +83,39 @@ export interface PolylineElement extends StrokedElement {
   arrowHeadPx: number;
 }
 
+/**
+ * How a greyscale image is reduced to 1 bit.
+ *
+ * `threshold` is right for line art and logos: hard, clean edges. `dither`
+ * (Floyd-Steinberg) is right for photographs, trading spatial resolution for
+ * apparent tone. Neither is a good default for the other, so it is per-image.
+ */
+export type HalftoneMode = "threshold" | "dither";
+
+export interface ImageElement extends ElementBase {
+  kind: "image";
+  /** PNG data URI. Downscaled at import to at most the label's pixel size. */
+  src: string;
+  halftone: HalftoneMode;
+  /** Luminance cut for `threshold` mode, 0-255. */
+  threshold: number;
+  /** Swap black and white, for light-on-dark artwork. */
+  invert: boolean;
+}
+
 /*
  * ---------------------------------------------------------------------------
  * Reserved kinds -- still NOT implemented.
  *
- * Payloads are intentionally absent. Do not flesh these out speculatively. In
- * particular `barcode` and `qr` are placeholders: barcode *management* tooling
- * is still being designed, and a barcode may end up referencing a managed
- * entity rather than carrying a raw value. Reserving the kind costs nothing;
- * guessing the payload costs a migration.
+ * Payloads are intentionally absent. Do not flesh these out speculatively.
+ * `barcode` and `qr` are placeholders: barcode *management* tooling is still
+ * being designed, and a barcode may end up referencing a managed entity rather
+ * than carrying a raw value. Reserving the kind costs nothing; guessing the
+ * payload costs a migration.
  * ---------------------------------------------------------------------------
  */
 export interface ReservedElement extends ElementBase {
-  kind: "image" | "barcode" | "qr";
+  kind: "barcode" | "qr";
 }
 
 export type Element =
@@ -103,7 +123,12 @@ export type Element =
   | RectElement
   | EllipseElement
   | PolylineElement
+  | ImageElement
   | ReservedElement;
+
+export function isImageElement(el: Element): el is ImageElement {
+  return el.kind === "image";
+}
 
 export type ShapeElement = RectElement | EllipseElement | PolylineElement;
 

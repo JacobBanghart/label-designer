@@ -3,7 +3,12 @@
  * 1bpp MonoRaster, the canonical render artifact for all print transports.
  */
 
-import { domCanvasFactory, type CanvasFactory, type Ctx2D } from "../core/canvas.ts";
+import {
+  domCanvasFactory,
+  type CanvasFactory,
+  type Ctx2D,
+  type ImageDecoder,
+} from "../core/canvas.ts";
 import {
   isPolylineElement,
   isTextElement,
@@ -21,6 +26,8 @@ import { createMonoRaster, setPixel, type MonoRaster } from "../core/raster.ts";
 export interface RasterizeOptions {
   /** Injected in Node tests; defaults to the DOM factory in the browser. */
   createCanvas?: CanvasFactory;
+  /** Injected in Node tests; defaults to the DOM decoder in the browser. */
+  decodeImage?: ImageDecoder;
   /** Luminance below this is burned. 0-255, default 128. */
   threshold?: number;
 }

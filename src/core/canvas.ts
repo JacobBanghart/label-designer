@@ -56,7 +56,36 @@ export interface Ctx2D {
   rect(x: number, y: number, w: number, h: number): void;
   fill(): void;
   stroke(): void;
+
+  /** Draw a decoded image scaled into the given box. */
+  drawImage(image: DecodedImage, x: number, y: number, w: number, h: number): void;
 }
+
+/**
+ * A decoded bitmap, as produced by `decodeImage`.
+ *
+ * Deliberately opaque: in the browser this is an HTMLImageElement / ImageBitmap
+ * and in Node it is a @napi-rs/canvas Image. The rasterizer only ever hands it
+ * back to drawImage, so its shape does not need to be pinned down.
+ */
+export type DecodedImage = unknown;
+
+/**
+ * Turn a data URI into something drawImage accepts.
+ *
+ * Injectable for the same reason the canvas factory is: Node has no Image
+ * constructor, so tests supply their own decoder.
+ */
+export type ImageDecoder = (src: string) => Promise<DecodedImage>;
+
+/** Browser default. Throws in Node, where a decoder must be injected. */
+export const domImageDecoder: ImageDecoder = (src) =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not decode image"));
+    image.src = src;
+  });
 
 export interface CanvasLike {
   width: number;
