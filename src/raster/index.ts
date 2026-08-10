@@ -25,6 +25,7 @@ import {
   type TextElement,
 } from "../core/document.ts";
 import { resolveGeometry } from "../core/label.ts";
+import { buildStrokePath, replayPath } from "../core/smoothing.ts";
 import { createMonoRaster, setPixel, type MonoRaster } from "../core/raster.ts";
 
 export interface RasterizeOptions {
@@ -279,26 +280,6 @@ type Point = readonly [number, number];
  * vertices rather than through the vertices themselves. This reads far better
  * for freehand pen input than raw `lineTo` segments, which look jagged.
  */
-function drawSmoothedPath(ctx: Ctx2D, pts: readonly Point[]): void {
-  ctx.moveTo(pts[0]![0], pts[0]![1]);
-
-  if (pts.length === 2) {
-    ctx.lineTo(pts[1]![0], pts[1]![1]);
-    return;
-  }
-
-  for (let i = 1; i < pts.length - 1; i++) {
-    const curr = pts[i]!;
-    const next = pts[i + 1]!;
-    const midX = (curr[0] + next[0]) / 2;
-    const midY = (curr[1] + next[1]) / 2;
-    ctx.quadraticCurveTo(curr[0], curr[1], midX, midY);
-  }
-
-  const last = pts[pts.length - 1]!;
-  ctx.lineTo(last[0], last[1]);
-}
-
 /** Draw a filled triangular arrowhead of `length`, tip at `to`, oriented along `from -> to`. */
 function drawArrowHead(ctx: Ctx2D, from: Point, to: Point, length: number): void {
   const dx = to[0] - from[0];
@@ -330,13 +311,13 @@ function drawPolylineElement(ctx: Ctx2D, el: PolylineElement): void {
     const localLeft = -widthPx / 2;
     const localTop = -heightPx / 2;
 
-    const pts: Point[] = [];
+    // Normalised points into box-local coordinates. Multiply, never divide, so
+    // a zero-width or zero-height box (a perfectly straight stroke) is fine.
+    const flat: number[] = [];
     for (let i = 0; i + 1 < el.points.length; i += 2) {
-      const nx = el.points[i]!;
-      const ny = el.points[i + 1]!;
-      pts.push([localLeft + nx * widthPx, localTop + ny * heightPx]);
+      flat.push(localLeft + el.points[i]! * widthPx, localTop + el.points[i + 1]! * heightPx);
     }
-    if (pts.length < 2) return;
+    if (flat.length < 4) return;
 
     if (el.strokeWidthPx > 0) {
       ctx.strokeStyle = "#000000";
@@ -345,17 +326,17 @@ function drawPolylineElement(ctx: Ctx2D, el: PolylineElement): void {
       ctx.lineJoin = "round";
 
       ctx.beginPath();
-      if (el.kind === "freehand") {
-        drawSmoothedPath(ctx, pts);
-      } else {
-        ctx.moveTo(pts[0]![0], pts[0]![1]);
-        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]![0], pts[i]![1]);
-      }
+      replayPath(ctx, buildStrokePath(flat, el.kind === "freehand"));
       ctx.stroke();
     }
 
     if (el.kind === "arrow" && el.arrowHeadPx > 0) {
-      drawArrowHead(ctx, pts[pts.length - 2]!, pts[pts.length - 1]!, el.arrowHeadPx);
+      drawArrowHead(
+        ctx,
+        [flat[flat.length - 4]!, flat[flat.length - 3]!],
+        [flat[flat.length - 2]!, flat[flat.length - 1]!],
+        el.arrowHeadPx,
+      );
     }
   });
 }

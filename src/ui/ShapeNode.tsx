@@ -10,9 +10,10 @@
  * rotation pivot matches the model's.
  */
 
-import { Ellipse, Group, Line, Rect } from "react-konva";
+import { Ellipse, Group, Line, Rect, Shape } from "react-konva";
 
 import { isPolylineElement, type ShapeElement } from "../core/document.ts";
+import { buildStrokePath, replayPath } from "../core/smoothing.ts";
 
 const INK = "#000000";
 
@@ -70,15 +71,29 @@ export function ShapeNode({ element }: Props) {
 
     return (
       <Group>
-        <Line
-          points={points}
+        {/*
+          Drawn with an explicit sceneFunc replaying core's shared path builder
+          rather than Konva's `tension` spline. Konva's spline and the
+          rasterizer's midpoint quadratics trace different curves through the
+          same points, so using it here would mean freehand strokes printed
+          differently from how they were drawn.
+        */}
+        <Shape
           stroke={INK}
           strokeWidth={strokeWidthPx}
           hitStrokeWidth={Math.max(strokeWidthPx, MIN_HIT_STROKE)}
           lineCap="round"
           lineJoin="round"
-          // Freehand is pen input, so smooth it; a straight line must not bow.
-          tension={element.kind === "freehand" ? 0.4 : 0}
+          sceneFunc={(ctx, shape) => {
+            ctx.beginPath();
+            replayPath(ctx, buildStrokePath(points, element.kind === "freehand"));
+            ctx.strokeShape(shape);
+          }}
+          hitFunc={(ctx, shape) => {
+            ctx.beginPath();
+            replayPath(ctx, buildStrokePath(points, element.kind === "freehand"));
+            ctx.strokeShape(shape);
+          }}
         />
         {element.kind === "arrow" && element.arrowHeadPx > 0 && (
           <ArrowHead points={points} size={element.arrowHeadPx} />
