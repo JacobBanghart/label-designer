@@ -323,3 +323,23 @@ input[type="number"] {
   color: var(--danger);
   font-size: 13px;
 }
+
+.warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.warning button {
+  border-color: #e5c9c6;
+  color: var(--danger);
+  background: #fff;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.warning button:hover {
+  border-color: var(--danger);
+}

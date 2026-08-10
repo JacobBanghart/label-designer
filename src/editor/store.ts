@@ -34,6 +34,7 @@ import {
   type ShapeKind,
 } from "./operations.ts";
 import { alignElements, distributeElements, type AlignEdge, type DistributeAxis } from "./align.ts";
+import { clampIntoBounds } from "./bounds.ts";
 
 export interface EditorState {
   history: History<LabelDocument>;
@@ -57,6 +58,7 @@ export type EditorAction =
   | { type: "selectMany"; ids: readonly string[] }
   | { type: "align"; edge: AlignEdge }
   | { type: "distribute"; axis: DistributeAxis }
+  | { type: "clampIntoBounds"; ids: readonly string[] }
   | { type: "duplicate"; id: string }
   | { type: "nudge"; id: string; dx: number; dy: number }
   | { type: "beginGesture" }
@@ -148,6 +150,14 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
       return {
         ...state,
         history: push(state.history, distributeElements(doc, state.selectedIds, action.axis)),
+      };
+
+    // Selects as well as moves: an element that was off-canvas is unreachable
+    // by clicking, so leaving the selection untouched would strand the user.
+    case "clampIntoBounds":
+      return {
+        history: push(state.history, clampIntoBounds(doc, action.ids)),
+        selectedIds: action.ids,
       };
 
     case "duplicate": {

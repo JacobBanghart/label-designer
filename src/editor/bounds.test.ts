@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { LabelDocument, TextElement } from "../core/document.ts";
 import { resolveGeometry } from "../core/label.ts";
-import { isOutOfBounds, outOfBoundsIds } from "./bounds.ts";
+import { clampIntoBounds, isOutOfBounds, outOfBoundsIds } from "./bounds.ts";
 import { createDocument } from "./operations.ts";
 
 const rect = resolveGeometry("4x6", "portrait"); // 812 x 1218
@@ -94,5 +94,76 @@ describe("outOfBoundsIds", () => {
     };
 
     expect(outOfBoundsIds(doc)).toEqual([]);
+  });
+});
+
+describe("clampIntoBounds", () => {
+  const doc = (...els: TextElement[]): LabelDocument => ({
+    ...createDocument("4x6", "portrait"),
+    elements: els,
+  });
+
+  it("pulls an element back inside and clears the warning", () => {
+    // The rule that actually printed clipped.
+    const before = doc(text("v", 91, 447, 6, 812));
+    expect(outOfBoundsIds(before)).toEqual(["v"]);
+
+    const after = clampIntoBounds(before, ["v"]);
+
+    expect(outOfBoundsIds(after)).toEqual([]);
+  });
+
+  it("moves without resizing", () => {
+    const after = clampIntoBounds(doc(text("a", 100, 1200, 100, 50)), ["a"]);
+    const moved = after.elements[0]!;
+
+    expect(moved.widthPx).toBe(100);
+    expect(moved.heightPx).toBe(50);
+  });
+
+  it("handles negative positions", () => {
+    const after = clampIntoBounds(doc(text("a", -50, -80)), ["a"]);
+    const moved = after.elements[0]!;
+
+    expect(moved.x).toBe(0);
+    expect(moved.y).toBe(0);
+  });
+
+  it("leaves untargeted elements alone", () => {
+    const before = doc(text("a", -50, -50), text("b", -60, -60));
+    const after = clampIntoBounds(before, ["a"]);
+
+    expect(after.elements[1]!.x).toBe(-60);
+  });
+
+  it("does not mutate the input", () => {
+    const before = doc(text("a", -50, -50));
+    const snapshot = JSON.stringify(before);
+
+    clampIntoBounds(before, ["a"]);
+
+    expect(JSON.stringify(before)).toBe(snapshot);
+  });
+
+  it("pins an oversized element to the top-left rather than shoving it off the far edge", () => {
+    const oversized = text("big", -100, -100, rect.widthPx + 400, rect.heightPx + 400);
+    const after = clampIntoBounds(doc(oversized), ["big"]);
+    const moved = after.elements[0]!;
+
+    expect(moved.x).toBe(0);
+    expect(moved.y).toBe(0);
+    // Still too big for the label, so it stays flagged rather than pretending.
+    expect(outOfBoundsIds(after)).toEqual(["big"]);
+  });
+
+  it("keeps round-stock elements out of the unprintable corners", () => {
+    const roundDoc: LabelDocument = {
+      ...createDocument("round144", "portrait"),
+      elements: [text("a", -20, -20, 40, 40)],
+    };
+
+    const after = clampIntoBounds(roundDoc, ["a"]);
+
+    expect(outOfBoundsIds(after)).toEqual([]);
   });
 });

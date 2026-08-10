@@ -67,3 +67,57 @@ export function outOfBoundsIds(doc: LabelDocument): string[] {
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
   return doc.elements.filter((el) => isOutOfBounds(el, geometry)).map((el) => el.id);
 }
+
+/**
+ * Move the given elements back onto the label.
+ *
+ * Necessary, not merely convenient: the canvas is sized to the label, so an
+ * element lying entirely outside it cannot be clicked, and the inspector has no
+ * position fields. Without this, a strayed element can only be retrieved one
+ * arrow-key press at a time.
+ *
+ * Translates only -- never resizes -- because silently shrinking someone's
+ * artwork to fit is a worse surprise than leaving it large. An element bigger
+ * than the label ends up pinned to the top-left, still flagged.
+ */
+export function clampIntoBounds(doc: LabelDocument, ids: readonly string[]): LabelDocument {
+  const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
+
+  /*
+   * For round stock, aim at the largest centred square that fits inside the
+   * circle (side = diameter / sqrt(2)). Clamping to the bounding rectangle
+   * would leave elements in the corners, which are not printable.
+   */
+  const inset = geometry.shape === "round" ? (geometry.widthPx * (1 - 1 / Math.SQRT2)) / 2 : 0;
+  const insetY = geometry.shape === "round" ? (geometry.heightPx * (1 - 1 / Math.SQRT2)) / 2 : 0;
+
+  const minX = inset;
+  const minY = insetY;
+  const maxX = geometry.widthPx - inset;
+  const maxY = geometry.heightPx - insetY;
+
+  return {
+    ...doc,
+    elements: doc.elements.map((element) => {
+      if (!ids.includes(element.id)) return element;
+
+      const box = boundingBox(element);
+      let dx = 0;
+      let dy = 0;
+
+      if (box.left < minX) dx = minX - box.left;
+      else if (box.right > maxX) dx = maxX - box.right;
+
+      if (box.top < minY) dy = minY - box.top;
+      else if (box.bottom > maxY) dy = maxY - box.bottom;
+
+      // Too large to fit: pin to the top-left corner rather than pushing it off
+      // the opposite edge, and leave it flagged.
+      if (box.right - box.left > maxX - minX) dx = minX - box.left;
+      if (box.bottom - box.top > maxY - minY) dy = minY - box.top;
+
+      if (dx === 0 && dy === 0) return element;
+      return { ...element, x: Math.round(element.x + dx), y: Math.round(element.y + dy) };
+    }),
+  };
+}

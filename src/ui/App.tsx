@@ -408,10 +408,30 @@ export function App() {
             dispatch={dispatch}
           />
           {clippedIds.length > 0 && (
-            <p className="warning">
-              {clippedIds.length} element{clippedIds.length === 1 ? "" : "s"} extend
-              {clippedIds.length === 1 ? "s" : ""} past the label and will be cut off when printed.
-            </p>
+            <div className="warning">
+              <span>
+                {clippedIds.length} element{clippedIds.length === 1 ? "" : "s"} extend
+                {clippedIds.length === 1 ? "s" : ""} past the label and will be cut off when
+                printed.
+              </span>
+              {/*
+                These buttons are the only handles on a strayed element: the
+                canvas is sized to the label, so anything lying fully outside it
+                cannot be clicked at all.
+              */}
+              <button
+                type="button"
+                onClick={() => dispatch({ type: "selectMany", ids: clippedIds })}
+              >
+                Select
+              </button>
+              <button
+                type="button"
+                onClick={() => dispatch({ type: "clampIntoBounds", ids: clippedIds })}
+              >
+                Move onto label
+              </button>
+            </div>
           )}
           {status && <p className="status">{status}</p>}
           {saveError && <p className="error">{saveError}</p>}
