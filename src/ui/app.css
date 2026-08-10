@@ -123,17 +123,30 @@ input[type="number"] {
 .stage-area {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 20px;
+  /* Scrolls only when zoomed past the panel; at Fit the stage matches exactly. */
   overflow: auto;
+  padding: 0;
 }
 
+/*
+ * Overlaid, not stacked.
+ *
+ * In the flow this added its own height on top of a stage already sized to the
+ * full panel, which overflowed the container and produced a scrollbar. Worse,
+ * that oscillates: the scrollbar narrows the container, the stage shrinks to
+ * match, the overflow disappears, the scrollbar goes, and it starts again.
+ */
 .stage-meta {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  z-index: 4;
 }
 
 .sidebar {

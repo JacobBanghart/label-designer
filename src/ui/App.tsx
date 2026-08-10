@@ -543,7 +543,13 @@ export function App() {
           <div className="zoom-controls">
             <button
               type="button"
-              onClick={() => setZoom(Math.max(0.1, roundZoom(scale / 1.25)))}
+              // Functional update: clicking quickly otherwise reads the same
+              // rendered scale each time and several clicks collapse into one.
+              onClick={() =>
+                setZoom((prev) =>
+                  Math.max(0.1, roundZoom((prev === "fit" ? fitScale : prev) / 1.25)),
+                )
+              }
               title="Zoom out"
             >
               &minus;
@@ -558,7 +564,9 @@ export function App() {
             </button>
             <button
               type="button"
-              onClick={() => setZoom(Math.min(8, roundZoom(scale * 1.25)))}
+              onClick={() =>
+                setZoom((prev) => Math.min(8, roundZoom((prev === "fit" ? fitScale : prev) * 1.25)))
+              }
               title="Zoom in"
             >
               +
