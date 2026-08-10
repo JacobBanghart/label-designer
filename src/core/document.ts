@@ -11,6 +11,7 @@
  */
 
 import type { LabelSizeId, Orientation } from "./label.ts";
+import type { QrEcc, Symbology } from "./barcode/index.ts";
 
 /**
  * Bumped whenever the persisted shape changes. Saved designs are migrated on
@@ -44,6 +45,12 @@ export interface TextElement extends ElementBase {
   italic: boolean;
   align: TextAlign;
   verticalAlign: VerticalAlign;
+  /**
+   * Merge variable supplying the text, if any. When set, `text` holds the
+   * last-resolved value so the document still renders standalone -- exporting a
+   * design without its dataset produces a readable label, not empty boxes.
+   */
+  binding?: string;
 }
 
 /*
@@ -108,17 +115,31 @@ export interface ImageElement extends ElementBase {
 
 /*
  * ---------------------------------------------------------------------------
- * Reserved kinds -- still NOT implemented.
+ * Barcodes.
  *
- * Payloads are intentionally absent. Do not flesh these out speculatively.
- * `barcode` and `qr` are placeholders: barcode *management* tooling is still
- * being designed, and a barcode may end up referencing a managed entity rather
- * than carrying a raw value. Reserving the kind costs nothing; guessing the
- * payload costs a migration.
+ * These were reserved without a payload while one question stayed open: whether
+ * a barcode would reference a managed entity rather than carry a raw value.
+ * That is now decided -- it carries a value. This app prints labels and does
+ * not own inventory data; the value arrives literally or from a merge variable,
+ * and anything richer belongs in whatever system exported the CSV.
+ *
+ * The `qr` kind folded into `barcode` with a symbology field, because QR is a
+ * symbology like any other and every consumer wants to switch on one kind. No
+ * saved document can contain the old kind -- it was never renderable or
+ * creatable -- so this needs no migration.
  * ---------------------------------------------------------------------------
  */
-export interface ReservedElement extends ElementBase {
-  kind: "barcode" | "qr";
+export interface BarcodeElement extends ElementBase {
+  kind: "barcode";
+  symbology: Symbology;
+  /** Literal value; ignored when `binding` names a variable. */
+  value: string;
+  /** QR error-correction level. Ignored by the 1D symbologies. */
+  ecc: QrEcc;
+  /** Print the value underneath, as retail barcodes do. */
+  showText: boolean;
+  /** Merge variable supplying the value, if any. */
+  binding?: string;
 }
 
 export type Element =
@@ -127,10 +148,14 @@ export type Element =
   | EllipseElement
   | PolylineElement
   | ImageElement
-  | ReservedElement;
+  | BarcodeElement;
 
 export function isImageElement(el: Element): el is ImageElement {
   return el.kind === "image";
+}
+
+export function isBarcodeElement(el: Element): el is BarcodeElement {
+  return el.kind === "barcode";
 }
 
 export type ShapeElement = RectElement | EllipseElement | PolylineElement;

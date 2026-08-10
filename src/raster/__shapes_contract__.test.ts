@@ -199,16 +199,65 @@ describe("polyline", () => {
   });
 });
 
-describe("reserved kinds", () => {
-  it("still skips unimplemented kinds without throwing", async () => {
+describe("barcodes", () => {
+  it("renders a Code 128 symbol", async () => {
     const raster = await rasterizeDocument(
       docWith({
         id: "b",
         kind: "barcode",
+        symbology: "code128",
+        value: "BIN-42",
+        ecc: "M",
+        showText: false,
         x: 10,
         y: 10,
-        widthPx: 50,
-        heightPx: 50,
+        widthPx: 300,
+        heightPx: 60,
+        rotation: 0,
+      }),
+      { createCanvas: nodeCanvas },
+    );
+
+    expect(countInk(raster)).toBeGreaterThan(0);
+  });
+
+  it("renders nothing when a module would be under one device pixel", async () => {
+    // The defining rule for barcodes: never degrade. A symbol squeezed below
+    // one pixel per module would still LOOK like a barcode and would scan as
+    // nothing, or worse, as the wrong value.
+    const raster = await rasterizeDocument(
+      docWith({
+        id: "b",
+        kind: "barcode",
+        symbology: "code128",
+        value: "THIS VALUE IS FAR TOO LONG FOR THE BOX",
+        ecc: "M",
+        showText: false,
+        x: 0,
+        y: 0,
+        widthPx: 20,
+        heightPx: 20,
+        rotation: 0,
+      }),
+      { createCanvas: nodeCanvas },
+    );
+
+    expect(countInk(raster)).toBe(0);
+  });
+
+  it("renders nothing for a value the symbology cannot encode", async () => {
+    const raster = await rasterizeDocument(
+      docWith({
+        id: "b",
+        kind: "barcode",
+        symbology: "ean13",
+        value: "not-digits",
+        ecc: "M",
+        showText: false,
+        x: 10,
+        y: 10,
+        widthPx: 300,
+        heightPx: 60,
         rotation: 0,
       }),
       { createCanvas: nodeCanvas },

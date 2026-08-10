@@ -12,18 +12,21 @@ import {
   type ImageDecoder,
 } from "../core/canvas.ts";
 import {
+  isBarcodeElement,
   isImageElement,
   isPolylineElement,
   isTextElement,
   type Element,
   type ElementBase,
   type EllipseElement,
+  type BarcodeElement,
   type ImageElement,
   type LabelDocument,
   type PolylineElement,
   type RectElement,
   type TextElement,
 } from "../core/document.ts";
+import { layoutBarcode } from "../core/barcode/index.ts";
 import { resolveGeometry } from "../core/label.ts";
 import { buildStrokePath, replayPath } from "../core/smoothing.ts";
 import { createMonoRaster, setPixel, type MonoRaster } from "../core/raster.ts";
@@ -479,6 +482,33 @@ function drawImageElement(
   });
 }
 
+/**
+ * Draw a barcode from the shared layout in core/barcode.
+ *
+ * The bar rectangles come from exactly the call the editor makes, so screen and
+ * print cannot disagree. A barcode that fails to lay out draws NOTHING rather
+ * than something approximate -- see the note in core/barcode/index.ts on why a
+ * barcode must never degrade gracefully.
+ */
+function drawBarcodeElement(ctx: Ctx2D, el: BarcodeElement): void {
+  const result = layoutBarcode(
+    { symbology: el.symbology, value: el.value, ecc: el.ecc },
+    { widthPx: el.widthPx, heightPx: el.heightPx },
+  );
+  if (!result.ok) return;
+  const { layout } = result;
+
+  withElementBox(ctx, el, (widthPx, heightPx) => {
+    const left = -widthPx / 2 + layout.offsetX;
+    const top = -heightPx / 2 + layout.offsetY;
+
+    ctx.fillStyle = "#000000";
+    for (const bar of layout.bars) {
+      ctx.fillRect(left + bar.x, top + bar.y, bar.w, bar.h);
+    }
+  });
+}
+
 /** Dispatch a single element to its drawing routine. */
 function drawElement(
   ctx: Ctx2D,
@@ -496,6 +526,8 @@ function drawElement(
     drawPolylineElement(ctx, el);
   } else if (isImageElement(el)) {
     drawImageElement(ctx, el, images.get(el.id), createCanvas);
+  } else if (isBarcodeElement(el)) {
+    drawBarcodeElement(ctx, el);
   }
 }
 
