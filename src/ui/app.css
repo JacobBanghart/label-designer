@@ -227,6 +227,10 @@ input[type="number"] {
   border-top: 1px solid var(--border);
 }
 
+.preview-panel .mono-preview {
+  margin-top: 10px;
+}
+
 .mono-preview {
   display: block;
   margin-top: 10px;
@@ -490,4 +494,68 @@ input[type="number"] {
 .printer-panel > button {
   width: 100%;
   margin-bottom: 10px;
+}
+
+/* ---- dropdown menu ---- */
+
+.menu {
+  position: relative;
+}
+
+.menu-items {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 220px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(20, 22, 26, 0.16);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-items button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.menu-items button:hover {
+  background: #f2f1ff;
+}
+
+.menu-label {
+  font-weight: 600;
+}
+
+.menu-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ---- sidebar panel headers ---- */
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel-head h2 {
+  margin: 0;
+}
+
+.panel-head button {
+  padding: 3px 10px;
+  font-size: 12px;
 }

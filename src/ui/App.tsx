@@ -33,13 +33,14 @@ import {
 } from "../storage/library.ts";
 import { useAutosave, type AutosaveResult } from "../storage/useAutosave.ts";
 import { Inspector } from "./Inspector.tsx";
-import { LabelCanvas, type Tool } from "./LabelCanvas.tsx";
+import { LabelCanvas, workspacePadding, type Tool } from "./LabelCanvas.tsx";
 import { ShapeInspector } from "./ShapeInspector.tsx";
 import { ImageInspector } from "./ImageInspector.tsx";
 import { MultiInspector } from "./MultiInspector.tsx";
 import { LibraryPanel } from "./LibraryPanel.tsx";
 import { PrinterPanel } from "./PrinterPanel.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
+import { ExportMenu } from "./ExportMenu.tsx";
 import { InlineTextEditor } from "./InlineTextEditor.tsx";
 import { useElementSize } from "./useElementSize.ts";
 import { useDisplayUnit } from "./useDisplayUnit.ts";
@@ -188,13 +189,19 @@ export function App() {
     return found && isTextElement(found) ? found : null;
   }, [doc, editingId]);
 
-  // Fit the label to whatever room the stage area has, leaving a margin. Capped
-  // at 1:1 so a small label on a big screen is not blown up past its real
+  // Fit the WORKSPACE -- label plus the padding that gestures need -- to the
+  // room available. Fitting the label alone would push the padding off-screen,
+  // which is where the off-label part of a drag has to happen.
+  const pad = workspacePadding(geometry.widthPx, geometry.heightPx);
+  const workspaceWidth = geometry.widthPx + pad * 2;
+  const workspaceHeight = geometry.heightPx + pad * 2;
+
+  // Capped at 1:1 so a small label on a big screen is not blown up past its real
   // resolution, which would just show interpolation artefacts.
   const scale = Math.min(
     1,
-    stageSize.width > 0 ? (stageSize.width - CANVAS_MARGIN) / geometry.widthPx : FALLBACK_SCALE,
-    stageSize.height > 0 ? (stageSize.height - CANVAS_MARGIN) / geometry.heightPx : FALLBACK_SCALE,
+    stageSize.width > 0 ? (stageSize.width - CANVAS_MARGIN) / workspaceWidth : FALLBACK_SCALE,
+    stageSize.height > 0 ? (stageSize.height - CANVAS_MARGIN) / workspaceHeight : FALLBACK_SCALE,
   );
 
   /*
@@ -371,49 +378,44 @@ export function App() {
         </div>
 
         <div className="group right">
-          <button type="button" onClick={() => setShowPreview((value) => !value)}>
-            {showPreview ? "Hide" : "Show"} 1-bit preview
-          </button>
-          {/*
-            Three explicit buttons rather than one "Export": PDF and PNG are the
-            artifacts you hand to someone or archive, JSON is the save file.
-            Collapsing them lost that distinction and surprised people who
-            expected a printable file.
-          */}
-          <span className="group-label">Export</span>
-          <button
-            type="button"
-            onClick={async () => {
-              setStatus("Exporting PDF...");
-              try {
-                await exportPdf(doc);
-                setStatus(null);
-              } catch (err) {
-                setStatus(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
-              }
-            }}
-            title="Print-ready PDF at the label's exact physical size"
-          >
-            PDF
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              setStatus("Exporting PNG...");
-              try {
-                await exportPng(doc);
-                setStatus(null);
-              } catch (err) {
-                setStatus(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
-              }
-            }}
-            title="1-bit PNG at the label's native resolution"
-          >
-            PNG
-          </button>
-          <button type="button" onClick={() => exportJson(doc)} title="The design, for re-import">
-            JSON
-          </button>
+          <ExportMenu
+            actions={[
+              {
+                id: "pdf",
+                label: "PDF",
+                hint: "Print-ready, exact physical size",
+                run: async () => {
+                  setStatus("Exporting PDF...");
+                  try {
+                    await exportPdf(doc);
+                    setStatus(null);
+                  } catch (err) {
+                    setStatus(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+                  }
+                },
+              },
+              {
+                id: "png",
+                label: "PNG",
+                hint: "1-bit, native resolution",
+                run: async () => {
+                  setStatus("Exporting PNG...");
+                  try {
+                    await exportPng(doc);
+                    setStatus(null);
+                  } catch (err) {
+                    setStatus(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+                  }
+                },
+              },
+              {
+                id: "json",
+                label: "JSON",
+                hint: "The design, for re-import",
+                run: () => exportJson(doc),
+              },
+            ]}
+          />
           <button type="button" onClick={() => fileRef.current?.click()} title="Open a .json label">
             Import
           </button>
@@ -432,18 +434,6 @@ export function App() {
               } else {
                 setStatus("That file is not a valid label design.");
               }
-              event.target.value = "";
-            }}
-          />
-
-          <input
-            ref={imageRef}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={async (event) => {
-              if (event.target.files) await importImages(event.target.files);
               event.target.value = "";
             }}
           />
@@ -497,7 +487,7 @@ export function App() {
           */}
           <div
             className="stage-canvas"
-            style={{ width: geometry.widthPx * scale, height: geometry.heightPx * scale }}
+            style={{ width: workspaceWidth * scale, height: workspaceHeight * scale }}
           >
             <LabelCanvas
               doc={doc}
@@ -517,6 +507,7 @@ export function App() {
               <InlineTextEditor
                 element={editingElement}
                 scale={scale}
+                offsetPx={pad}
                 onChange={(text) =>
                   dispatch({
                     type: "update",
@@ -588,6 +579,34 @@ export function App() {
             </div>
           )}
 
+          {/*
+            The preview lives beside the printing controls rather than the
+            toolbar: it answers "what will come out", which is a question you
+            ask while adjusting the printer, not while drawing.
+          */}
+          <div className="preview-panel">
+            <div className="panel-head">
+              <h2>Printer output</h2>
+              <button type="button" onClick={() => setShowPreview((value) => !value)}>
+                {showPreview ? "Hide" : "Show"}
+              </button>
+            </div>
+            {showPreview ? (
+              <>
+                <p className="hint">
+                  Exactly what gets burned &mdash; 1 bit, no grey. Click to enlarge.
+                </p>
+                <MonoPreview
+                  doc={doc}
+                  displayWidth={220}
+                  onExpand={() => setPreviewExpanded(true)}
+                />
+              </>
+            ) : (
+              <p className="hint">Show a 1-bit render of what the printer will produce.</p>
+            )}
+          </div>
+
           <PrinterPanel
             onConnectedChange={setUsbConnected}
             onTestPrint={async () => {
@@ -613,17 +632,6 @@ export function App() {
             onDelete={handleDelete}
             onReorder={(ids) => setLibrary(reorderLibrary(ids))}
           />
-
-          {showPreview && (
-            <div className="preview-panel">
-              <h2>Printer output</h2>
-              <p className="hint">
-                Exactly what gets burned &mdash; 1 bit, no grey. Set the print dialog to
-                &ldquo;Actual size&rdquo; or output will be rescaled.
-              </p>
-              <MonoPreview doc={doc} displayWidth={220} onExpand={() => setPreviewExpanded(true)} />
-            </div>
-          )}
         </aside>
       </div>
 

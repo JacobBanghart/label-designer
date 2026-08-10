@@ -28,6 +28,21 @@ import { boundingBox, computeSnap, type Guide } from "../editor/snapping.ts";
 /** Magnetic pull radius, in SCREEN pixels; divided by scale at use. */
 const SNAP_SCREEN_PX = 7;
 
+/**
+ * Working space around the label, in label pixels.
+ *
+ * The stage used to be exactly the label size, so a pointer outside it produced
+ * no events at all: you could not start a drag off the label, and a drag that
+ * left it simply stopped. Padding gives the gestures somewhere to live, the way
+ * a drawing program has canvas around its artboard.
+ *
+ * Proportional so it stays usable on a 2x1 as well as a 4x6, with a floor so
+ * tiny labels still get a real margin.
+ */
+export function workspacePadding(widthPx: number, heightPx: number): number {
+  return Math.max(60, Math.round(Math.min(widthPx, heightPx) * 0.35));
+}
+
 /** null means the select/move tool. */
 export type Tool = ShapeKind | null;
 
@@ -57,6 +72,7 @@ export function LabelCanvas({
   dispatch,
 }: Props) {
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
+  const pad = workspacePadding(geometry.widthPx, geometry.heightPx);
   const transformerRef = useRef<Konva.Transformer>(null);
   const layerRef = useRef<Konva.Layer>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -144,7 +160,8 @@ export function LabelCanvas({
     const stage = stageRef.current;
     const position = stage?.getPointerPosition();
     if (!position) return null;
-    return [position.x / scale, position.y / scale];
+    // Stage coords include the workspace padding; label space does not.
+    return [position.x / scale - pad, position.y / scale - pad];
   }
 
   function handleDrawStart() {
@@ -200,8 +217,8 @@ export function LabelCanvas({
   return (
     <Stage
       ref={stageRef}
-      width={geometry.widthPx * scale}
-      height={geometry.heightPx * scale}
+      width={(geometry.widthPx + pad * 2) * scale}
+      height={(geometry.heightPx + pad * 2) * scale}
       scaleX={scale}
       scaleY={scale}
       onMouseDown={(event) => {
@@ -236,146 +253,154 @@ export function LabelCanvas({
       onTouchMove={handleDrawMove}
       onTouchEnd={handleDrawEnd}
       style={{
-        background: "#fff",
-        boxShadow: "0 1px 3px rgba(0,0,0,.3)",
+        // The workspace, not the label. The label itself is drawn inside.
+        background: "transparent",
         cursor: tool ? "crosshair" : "default",
       }}
     >
       <Layer ref={layerRef}>
-        {/* The label surface. Anything outside it will not print. */}
-        <Rect
-          x={0}
-          y={0}
-          width={geometry.widthPx}
-          height={geometry.heightPx}
-          fill={geometry.shape === "round" ? "#eceef2" : "#ffffff"}
-          listening={false}
-        />
-        {geometry.shape === "round" && (
-          <Ellipse
-            x={geometry.widthPx / 2}
-            y={geometry.heightPx / 2}
-            radiusX={geometry.widthPx / 2}
-            radiusY={geometry.heightPx / 2}
-            fill="#ffffff"
+        {/* Shifted so label coordinates stay label coordinates everywhere else:
+            only this one Group knows about the workspace padding. */}
+        <Group x={pad} y={pad}>
+          {/* The label surface. Anything outside it will not print. */}
+          <Rect
+            x={0}
+            y={0}
+            width={geometry.widthPx}
+            height={geometry.heightPx}
+            fill={geometry.shape === "round" ? "#eceef2" : "#ffffff"}
+            shadowColor="#000000"
+            shadowOpacity={0.25}
+            shadowBlur={6 / scale}
+            shadowOffsetY={1 / scale}
             listening={false}
           />
-        )}
+          {geometry.shape === "round" && (
+            <Ellipse
+              x={geometry.widthPx / 2}
+              y={geometry.heightPx / 2}
+              radiusX={geometry.widthPx / 2}
+              radiusY={geometry.heightPx / 2}
+              fill="#ffffff"
+              listening={false}
+            />
+          )}
 
-        {/*
+          {/*
           Clip to the die-cut, mirroring what the rasterizer does. Without this
           the editor would happily show artwork in the corners of a round label
           that silently vanishes on print.
         */}
-        <Group
-          clipFunc={
-            geometry.shape === "round"
-              ? (ctx) => {
-                  ctx.beginPath();
-                  ctx.ellipse(
-                    geometry.widthPx / 2,
-                    geometry.heightPx / 2,
-                    geometry.widthPx / 2,
-                    geometry.heightPx / 2,
-                    0,
-                    0,
-                    Math.PI * 2,
-                  );
-                  ctx.closePath();
+          <Group
+            clipFunc={
+              geometry.shape === "round"
+                ? (ctx) => {
+                    ctx.beginPath();
+                    ctx.ellipse(
+                      geometry.widthPx / 2,
+                      geometry.heightPx / 2,
+                      geometry.widthPx / 2,
+                      geometry.heightPx / 2,
+                      0,
+                      0,
+                      Math.PI * 2,
+                    );
+                    ctx.closePath();
+                  }
+                : undefined
+            }
+          >
+            {doc.elements.map((element) => (
+              <ElementNode
+                key={element.id}
+                element={element}
+                // Hidden while its DOM editor is open, so the text is not drawn twice.
+                hidden={element.id === editingId}
+                dispatch={dispatch}
+                onSelect={(additive) =>
+                  dispatch(
+                    additive
+                      ? { type: "toggleSelect", id: element.id }
+                      : selectedIds.includes(element.id)
+                        ? { type: "selectMany", ids: selectedIds }
+                        : { type: "select", id: element.id },
+                  )
                 }
-              : undefined
-          }
-        >
-          {doc.elements.map((element) => (
-            <ElementNode
-              key={element.id}
-              element={element}
-              // Hidden while its DOM editor is open, so the text is not drawn twice.
-              hidden={element.id === editingId}
-              dispatch={dispatch}
-              onSelect={(additive) =>
-                dispatch(
-                  additive
-                    ? { type: "toggleSelect", id: element.id }
-                    : selectedIds.includes(element.id)
-                      ? { type: "selectMany", ids: selectedIds }
-                      : { type: "select", id: element.id },
-                )
+                onEditStart={onEditStart}
+                onDragPosition={onDragPosition}
+                onDragDone={onDragDone}
+              />
+            ))}
+          </Group>
+
+          {/* Live preview of the stroke being drawn. Not part of the document,
+            so it never enters undo history. */}
+          {draft && tool && <DraftPreview tool={tool} points={draft} doc={doc} />}
+
+          {/* Anything that will be clipped on print, outlined so it cannot be
+            missed. Drawn above the artwork but below the guides. */}
+          {doc.elements
+            .filter((element) => clippedIds.includes(element.id))
+            .map((element) => {
+              const box = boundingBox(element);
+              return (
+                <Rect
+                  key={`clip-${element.id}`}
+                  x={box.left}
+                  y={box.top}
+                  width={box.right - box.left}
+                  height={box.bottom - box.top}
+                  stroke="#b42318"
+                  strokeWidth={2 / scale}
+                  dash={[8 / scale, 5 / scale]}
+                  listening={false}
+                />
+              );
+            })}
+
+          {marquee && (
+            <Rect
+              x={Math.min(marquee[0], marquee[2])}
+              y={Math.min(marquee[1], marquee[3])}
+              width={Math.abs(marquee[2] - marquee[0])}
+              height={Math.abs(marquee[3] - marquee[1])}
+              fill="rgba(79,70,229,0.08)"
+              stroke="#4f46e5"
+              strokeWidth={1 / scale}
+              listening={false}
+            />
+          )}
+
+          {guides.map((guide) => (
+            <Line
+              key={`${guide.orientation}-${guide.position}`}
+              points={
+                guide.orientation === "vertical"
+                  ? [guide.position, 0, guide.position, geometry.heightPx]
+                  : [0, guide.position, geometry.widthPx, guide.position]
               }
-              onEditStart={onEditStart}
-              onDragPosition={onDragPosition}
-              onDragDone={onDragDone}
+              stroke="#e0218a"
+              strokeWidth={1 / scale}
+              dash={[6 / scale, 4 / scale]}
+              listening={false}
             />
           ))}
-        </Group>
 
-        {/* Live preview of the stroke being drawn. Not part of the document,
-            so it never enters undo history. */}
-        {draft && tool && <DraftPreview tool={tool} points={draft} doc={doc} />}
-
-        {/* Anything that will be clipped on print, outlined so it cannot be
-            missed. Drawn above the artwork but below the guides. */}
-        {doc.elements
-          .filter((element) => clippedIds.includes(element.id))
-          .map((element) => {
-            const box = boundingBox(element);
-            return (
-              <Rect
-                key={`clip-${element.id}`}
-                x={box.left}
-                y={box.top}
-                width={box.right - box.left}
-                height={box.bottom - box.top}
-                stroke="#b42318"
-                strokeWidth={2 / scale}
-                dash={[8 / scale, 5 / scale]}
-                listening={false}
-              />
-            );
-          })}
-
-        {marquee && (
-          <Rect
-            x={Math.min(marquee[0], marquee[2])}
-            y={Math.min(marquee[1], marquee[3])}
-            width={Math.abs(marquee[2] - marquee[0])}
-            height={Math.abs(marquee[3] - marquee[1])}
-            fill="rgba(79,70,229,0.08)"
-            stroke="#4f46e5"
-            strokeWidth={1 / scale}
-            listening={false}
-          />
-        )}
-
-        {guides.map((guide) => (
-          <Line
-            key={`${guide.orientation}-${guide.position}`}
-            points={
-              guide.orientation === "vertical"
-                ? [guide.position, 0, guide.position, geometry.heightPx]
-                : [0, guide.position, geometry.widthPx, guide.position]
+          <Transformer
+            ref={transformerRef}
+            rotateEnabled
+            keepRatio={false}
+            // Handles are drawn in stage space, so counter-scale them to stay a
+            // usable size no matter how far the label is zoomed out.
+            anchorSize={10 / scale}
+            borderStrokeWidth={1 / scale}
+            anchorStrokeWidth={1 / scale}
+            rotateAnchorOffset={24 / scale}
+            boundBoxFunc={(oldBox, newBox) =>
+              newBox.width < 10 || newBox.height < 10 ? oldBox : newBox
             }
-            stroke="#e0218a"
-            strokeWidth={1 / scale}
-            dash={[6 / scale, 4 / scale]}
-            listening={false}
           />
-        ))}
-
-        <Transformer
-          ref={transformerRef}
-          rotateEnabled
-          keepRatio={false}
-          // Handles are drawn in stage space, so counter-scale them to stay a
-          // usable size no matter how far the label is zoomed out.
-          anchorSize={10 / scale}
-          borderStrokeWidth={1 / scale}
-          anchorStrokeWidth={1 / scale}
-          rotateAnchorOffset={24 / scale}
-          boundBoxFunc={(oldBox, newBox) =>
-            newBox.width < 10 || newBox.height < 10 ? oldBox : newBox
-          }
-        />
+        </Group>
       </Layer>
     </Stage>
   );
