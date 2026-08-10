@@ -1,0 +1,16 @@
+# Simple self-hosting path for Label Designer.
+#
+# No volumes and no environment variables are needed: the app is fully
+# client-side (canvas editor, no backend, no database). Everything a label
+# designer creates lives in the *browser's* storage on whatever machine
+# opens the page -- there is no server-side state for this container to
+# persist. Just publish the port and go.
+services:
+  label-designer:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    # Or, once published: image: ghcr.io/<you>/label-designer:latest
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

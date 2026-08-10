@@ -1,0 +1,105 @@
+# Modeled on flux/clusters/k8s-homelab-apps/excalidraw/excalidraw.yaml.
+# Label Designer is stateless (client-side only, no PVC, no secrets) --
+# same shape as excalidraw: Namespace, Deployment, Service, IngressRoute,
+# cert-manager Certificate.
+#
+# Update `image:` below to wherever you publish the image built from the
+# repo root Dockerfile (e.g. a GHCR tag); this file does not build it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: label-designer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: label-designer
+  namespace: label-designer
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: label-designer
+  template:
+    metadata:
+      labels:
+        app: label-designer
+    spec:
+      containers:
+        - name: label-designer
+          image: ghcr.io/jacobbanghart/label-designer:latest
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"
+          ports:
+            - containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: label-designer
+  namespace: label-designer
+spec:
+  selector:
+    app: label-designer
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: label-designer
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: label-designer
+  namespace: label-designer
+  annotations:
+    # See excalidraw.yaml for why this is excluded from external-dns: public
+    # DNS cutover is a single router-level event, not per-app.
+    external-dns.alpha.kubernetes.io/exclude: "true"
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: Host(`labels.jacobbanghart.com`)
+      kind: Rule
+      services:
+        - name: label-designer
+          port: 80
+  tls:
+    secretName: label-designer-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: label-designer-tls
+  namespace: label-designer
+spec:
+  secretName: label-designer-tls
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  dnsNames:
+    - labels.jacobbanghart.com
+  issuerRef:
+    name: letsencrypt-cloudflare
+    kind: ClusterIssuer
+    group: cert-manager.io
