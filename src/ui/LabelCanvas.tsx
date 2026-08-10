@@ -34,6 +34,23 @@ const SNAP_SCREEN_PX = 7;
  */
 export const FIT_MARGIN_PX = 48;
 
+/**
+ * Angles the rotate handle snaps to.
+ *
+ * Multiples of 15 cover everything a label is realistically set to -- upright,
+ * the two sideways orientations, upside down, and the diagonals a banner gets
+ * -- while staying fine enough not to feel like it is fighting the pointer.
+ */
+const ROTATION_SNAPS = Array.from({ length: 24 }, (_, i) => i * 15);
+
+/**
+ * How close to a snap angle the handle has to be before it takes hold.
+ *
+ * Deliberately well under half the 15 degree step: at half, every angle is
+ * inside some snap's pull and free rotation becomes unreachable.
+ */
+const ROTATION_SNAP_TOLERANCE = 5;
+
 /** null means the select/move tool. */
 export type Tool = ShapeKind | null;
 
@@ -84,6 +101,24 @@ export function LabelCanvas({
   // component state rather than the document so an in-progress gesture never
   // enters undo history.
   const [draft, setDraft] = useState<number[] | null>(null);
+
+  // Shift bypasses rotation snapping, for the rare angle that is not a multiple
+  // of 15. Read from the window rather than the transform event because Konva
+  // does not re-evaluate the snap props mid-gesture from the event itself.
+  const [freeRotate, setFreeRotate] = useState(false);
+  useEffect(() => {
+    const sync = (event: KeyboardEvent) => setFreeRotate(event.shiftKey);
+    window.addEventListener("keydown", sync);
+    window.addEventListener("keyup", sync);
+    // A window that loses focus mid-drag never delivers the keyup.
+    const clear = () => setFreeRotate(false);
+    window.addEventListener("blur", clear);
+    return () => {
+      window.removeEventListener("keydown", sync);
+      window.removeEventListener("keyup", sync);
+      window.removeEventListener("blur", clear);
+    };
+  }, []);
 
   // Alignment guides for the drag in progress. Also view-only state.
   const [guides, setGuides] = useState<readonly Guide[]>([]);
@@ -466,6 +501,8 @@ export function LabelCanvas({
             borderStrokeWidth={1 / scale}
             anchorStrokeWidth={1 / scale}
             rotateAnchorOffset={24 / scale}
+            rotationSnaps={freeRotate ? [] : ROTATION_SNAPS}
+            rotationSnapTolerance={ROTATION_SNAP_TOLERANCE}
             boundBoxFunc={(oldBox, newBox) =>
               newBox.width < 10 || newBox.height < 10 ? oldBox : newBox
             }
