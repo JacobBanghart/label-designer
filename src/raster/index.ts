@@ -498,13 +498,27 @@ function drawBarcodeElement(ctx: Ctx2D, el: BarcodeElement): void {
   if (!result.ok) return;
   const { layout } = result;
 
+  // Caption geometry must match BarcodeNode exactly, or the bars print at a
+  // different height than the editor showed.
+  const captionSize = Math.min(layout.moduleSizePx * 7, el.heightPx * 0.22);
+  const showCaption = el.showText && el.symbology !== "qr" && captionSize >= 6;
+  const barHeight = showCaption ? layout.heightPx - captionSize : layout.heightPx;
+
   withElementBox(ctx, el, (widthPx, heightPx) => {
     const left = -widthPx / 2 + layout.offsetX;
     const top = -heightPx / 2 + layout.offsetY;
 
     ctx.fillStyle = "#000000";
     for (const bar of layout.bars) {
-      ctx.fillRect(left + bar.x, top + bar.y, bar.w, bar.h);
+      const h = el.symbology === "qr" ? bar.h : Math.max(1, barHeight);
+      ctx.fillRect(left + bar.x, top + bar.y, bar.w, h);
+    }
+
+    if (showCaption) {
+      ctx.font = `${captionSize}px monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.fillText(el.value, left + layout.widthPx / 2, top + layout.heightPx);
     }
   });
 }

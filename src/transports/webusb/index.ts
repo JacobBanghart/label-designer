@@ -173,6 +173,34 @@ export const webUsbTransport: PrintTransport = {
     const bytes = encodeTspl(raster, { ...settings, copies: options.copies });
     return sendToDevice(device, bytes);
   },
+
+  /*
+   * A merge run goes down the wire as one concatenated TSPL stream.
+   *
+   * TSPL is a command language, not a page format: each label is its own
+   * header/BITMAP/PRINT sequence, and the printer executes them in order. One
+   * transfer is markedly faster than one per label over USB, and it cannot
+   * interleave with anything else.
+   */
+  async printBatch(rasters, options): Promise<PrintResult> {
+    const device = await getGrantedDevice();
+    if (!device) {
+      return { ok: false, message: "No printer connected. Use Connect printer first." };
+    }
+
+    const settings = loadTsplSettings();
+    const chunks = rasters.map((raster) =>
+      encodeTspl(raster, { ...settings, copies: options.copies }),
+    );
+    const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return sendToDevice(device, bytes);
+  },
 };
 
 registerTransport(webUsbTransport);

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   isImageElement,
   isShapeElement,
+  isBarcodeElement,
   isTextElement,
   type LabelDocument,
 } from "../core/document.ts";
@@ -12,11 +13,15 @@ import {
   supportsOrientation,
   type LabelSizeId,
 } from "../core/label.ts";
-import { getTransport } from "../core/transport.ts";
+import { getTransport, printAll } from "../core/transport.ts";
 import { useEditor } from "../editor/store.ts";
 import { createDocument, nextId } from "../editor/operations.ts";
 import { outOfBoundsIds } from "../editor/bounds.ts";
 import { rasterizeDocument } from "../raster/index.ts";
+import { boundNames, resolveDocument, validateDataset, type Dataset } from "../core/merge.ts";
+import { loadDataset, saveDataset } from "../storage/dataset.ts";
+import { createBarcodeElement } from "../editor/operations.ts";
+import { SYMBOLOGIES, SYMBOLOGY_LABELS, type Symbology } from "../core/barcode/index.ts";
 import { importJson } from "../storage/local.ts";
 import { exportJson, exportPdf, exportPng } from "../editor/exporters.ts";
 import { createImageElement, readImageFile } from "../editor/importImage.ts";
@@ -37,6 +42,8 @@ import { FIT_MARGIN_PX, LabelCanvas, type Tool } from "./LabelCanvas.tsx";
 import { ShapeInspector } from "./ShapeInspector.tsx";
 import { ImageInspector } from "./ImageInspector.tsx";
 import { MultiInspector } from "./MultiInspector.tsx";
+import { BarcodeInspector } from "./BarcodeInspector.tsx";
+import { MergePanel } from "./MergePanel.tsx";
 import { LibraryPanel } from "./LibraryPanel.tsx";
 import { PrinterPanel } from "./PrinterPanel.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
@@ -56,6 +63,13 @@ const TOOLS = [
 ] as const;
 
 /** Single-key tool shortcuts. `null` is the select/move tool. */
+/** What each symbology is actually for, since the names alone do not say. */
+const BARCODE_HINTS: Record<Symbology, string> = {
+  code128: "Any text or number. The general-purpose choice.",
+  ean13: "Retail UPC / EAN product codes. 12 or 13 digits.",
+  qr: "Square 2D code. Scannable by any phone camera.",
+};
+
 const TOOL_KEYS: Record<string, Tool> = {
   v: null,
   r: "rect",
@@ -102,8 +116,39 @@ export function App() {
   const [zoom, setZoom] = useState<number | "fit">("fit");
   /** View offset in SCREEN pixels, from right- or middle-drag panning. */
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [sidebarTab, setSidebarTab] = useState<"design" | "printer">("design");
+  const [sidebarTab, setSidebarTab] = useState<"design" | "data" | "printer">("design");
+
+  /*
+   * The merge dataset, loaded per label and held outside the document.
+   * See src/storage/dataset.ts for why it is not part of the document itself.
+   */
+  const [dataset, setDataset] = useState<Dataset>(() => loadDataset(initialDoc?.id ?? ""));
+  const [recordIndex, setRecordIndex] = useState(0);
   const [library, setLibrary] = useState<Library>(() => loadLibrary());
+
+  // Switching labels swaps in that label's own data.
+  const loadedFor = useRef(doc.id);
+  useEffect(() => {
+    if (loadedFor.current === doc.id) return;
+    loadedFor.current = doc.id;
+    setDataset(loadDataset(doc.id));
+    setRecordIndex(0);
+  }, [doc.id]);
+
+  useEffect(() => {
+    saveDataset(doc.id, dataset);
+  }, [doc.id, dataset]);
+
+  /**
+   * The document as it will actually print, with bindings resolved against the
+   * record being previewed.
+   *
+   * Everything downstream -- canvas, 1-bit preview, export, print -- uses this
+   * rather than `doc`, so what is on screen is definitionally what comes out.
+   */
+  const record = dataset.records[recordIndex];
+  const resolvedDoc = useMemo(() => (record ? resolveDocument(doc, record) : doc), [doc, record]);
+  const recordIndexSafe = Math.min(recordIndex, Math.max(0, dataset.records.length - 1));
 
   /*
    * Single-key tool switching, the way every drawing app works.
@@ -285,17 +330,42 @@ export function App() {
       setStatus("No print transport registered.");
       return;
     }
-    setStatus("Rendering...");
-    try {
-      const raster = await rasterizeDocument(doc);
-      const result = await transport.print(raster, { copies });
+    /*
+     * A merge run prints every record; without one, just the label on screen.
+     *
+     * Records that cannot produce a valid barcode are refused up front rather
+     * than skipped quietly. Half a run of labels, with gaps nobody noticed, is
+     * worse than not starting.
+     */
+    const merging = dataset.records.length > 0 && boundNames(doc).length > 0;
+    const problems = merging ? validateDataset(doc, dataset) : [];
+    if (problems.length > 0) {
+      const rows = new Set(problems.map((p) => p.row));
       setStatus(
-        result.ok ? "Sent to print dialog." : `Print failed: ${result.message ?? "unknown"}`,
+        `Not printing: ${rows.size} of ${dataset.records.length} records have a barcode that will not encode. See the Data tab.`,
+      );
+      setSidebarTab("data");
+      return;
+    }
+
+    setStatus(merging ? `Rendering ${dataset.records.length} labels...` : "Rendering...");
+    try {
+      const docs = merging ? dataset.records.map((r) => resolveDocument(doc, r)) : [resolvedDoc];
+      const rasters = [];
+      for (const each of docs) rasters.push(await rasterizeDocument(each));
+
+      const result = await printAll(transport, rasters, { copies });
+      setStatus(
+        result.ok
+          ? merging
+            ? `Sent ${rasters.length} labels.`
+            : "Sent to print dialog."
+          : `Print failed: ${result.message ?? "unknown"}`,
       );
     } catch (err) {
       setStatus(`Print failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [doc, copies, usbConnected]);
+  }, [doc, resolvedDoc, dataset, copies, usbConnected]);
 
   return (
     <div className="app">
@@ -381,6 +451,16 @@ export function App() {
           >
             Image
           </button>
+          <ExportMenu
+            label="Barcode"
+            actions={SYMBOLOGIES.map((symbology) => ({
+              id: symbology,
+              label: SYMBOLOGY_LABELS[symbology],
+              hint: BARCODE_HINTS[symbology],
+              run: () =>
+                dispatch({ type: "addElement", element: createBarcodeElement(doc, symbology) }),
+            }))}
+          />
           {TOOLS.map(({ kind, label, hint }) => (
             <button
               key={kind}
@@ -505,7 +585,7 @@ export function App() {
           */}
           <div className="stage-canvas" style={{ width: stageWidth, height: stageHeight }}>
             <LabelCanvas
-              doc={doc}
+              doc={resolvedDoc}
               selectedIds={selectedIds}
               clippedIds={clippedIds}
               editingId={editingId}
@@ -632,6 +712,15 @@ export function App() {
             <button
               type="button"
               role="tab"
+              aria-selected={sidebarTab === "data"}
+              className={sidebarTab === "data" ? "active" : ""}
+              onClick={() => setSidebarTab("data")}
+            >
+              Data{dataset.names.length > 0 ? ` (${dataset.records.length})` : ""}
+            </button>
+            <button
+              type="button"
+              role="tab"
               aria-selected={sidebarTab === "printer"}
               className={sidebarTab === "printer" ? "active" : ""}
               onClick={() => setSidebarTab("printer")}
@@ -640,16 +729,38 @@ export function App() {
             </button>
           </div>
 
-          {sidebarTab === "design" ? (
+          {sidebarTab === "data" ? (
+            <MergePanel
+              doc={doc}
+              dataset={dataset}
+              onDatasetChange={setDataset}
+              recordIndex={recordIndexSafe}
+              onRecordIndexChange={setRecordIndex}
+            />
+          ) : sidebarTab === "design" ? (
             <>
               {selectedElements.length > 1 ? (
                 <MultiInspector elements={selectedElements} dispatch={dispatch} />
               ) : selected && isTextElement(selected) ? (
-                <Inspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
+                <Inspector
+                  element={selected}
+                  unit={unit}
+                  dpi={doc.dpi}
+                  variables={dataset.names}
+                  dispatch={dispatch}
+                />
               ) : selected && isShapeElement(selected) ? (
                 <ShapeInspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
               ) : selected && isImageElement(selected) ? (
                 <ImageInspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
+              ) : selected && isBarcodeElement(selected) ? (
+                <BarcodeInspector
+                  element={selected}
+                  unit={unit}
+                  dpi={doc.dpi}
+                  variables={dataset.names}
+                  dispatch={dispatch}
+                />
               ) : (
                 <div className="empty">
                   <p>Nothing selected.</p>

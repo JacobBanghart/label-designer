@@ -51,6 +51,14 @@ export interface PrintTransport {
   isAvailable(): Promise<boolean>;
   capabilities(): TransportCaps;
   print(raster: MonoRaster, options: PrintOptions): Promise<PrintResult>;
+  /**
+   * Print several DIFFERENT labels as one job, for a merge run.
+   *
+   * Optional: `printAll` falls back to calling `print` in turn. Implementing it
+   * matters most for transports that go through a system dialog, where the
+   * fallback would ask the user to confirm a dialog per label.
+   */
+  printBatch?(rasters: readonly MonoRaster[], options: PrintOptions): Promise<PrintResult>;
 }
 
 const transports = new Map<string, PrintTransport>();
@@ -69,4 +77,33 @@ export function getTransport(id: string): PrintTransport | undefined {
 
 export function listTransports(): readonly PrintTransport[] {
   return [...transports.values()];
+}
+
+/**
+ * Print a whole merge run.
+ *
+ * Stops at the first failure rather than pushing on. A batch that fails partway
+ * leaves labels already on the roll, and the user needs to know which record
+ * stopped it in order to resume -- continuing would waste the rest of the roll
+ * printing labels nobody checked.
+ */
+export async function printAll(
+  transport: PrintTransport,
+  rasters: readonly MonoRaster[],
+  options: PrintOptions,
+): Promise<PrintResult> {
+  if (rasters.length === 0) return { ok: false, message: "Nothing to print" };
+  if (rasters.length === 1) return transport.print(rasters[0]!, options);
+  if (transport.printBatch) return transport.printBatch(rasters, options);
+
+  for (const [index, raster] of rasters.entries()) {
+    const result = await transport.print(raster, options);
+    if (!result.ok) {
+      return {
+        ok: false,
+        message: `Stopped at label ${index + 1}: ${result.message ?? "unknown"}`,
+      };
+    }
+  }
+  return { ok: true };
 }

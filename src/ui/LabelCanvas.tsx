@@ -12,6 +12,7 @@ import { Ellipse, Group, Layer, Line, Rect, Stage, Text, Transformer } from "rea
 import type Konva from "konva";
 
 import {
+  isBarcodeElement,
   isImageElement,
   isShapeElement,
   isTextElement,
@@ -23,6 +24,7 @@ import type { EditorAction } from "../editor/store.ts";
 import { boxElementFromDrag, polylineFromPoints, type ShapeKind } from "../editor/operations.ts";
 import { ShapeNode } from "./ShapeNode.tsx";
 import { ImageNode } from "./ImageNode.tsx";
+import { BarcodeNode } from "./BarcodeNode.tsx";
 import { boundingBox, computeSnap, type Guide } from "../editor/snapping.ts";
 
 /** Magnetic pull radius, in SCREEN pixels; divided by scale at use. */
@@ -569,8 +571,8 @@ function ElementNode({
   onDragPosition,
   onDragDone,
 }: ElementNodeProps) {
-  // Reserved kinds (image/barcode/qr) are not renderable yet; skip rather than
-  // crash, matching what the rasterizer does.
+  // An unrenderable kind is skipped rather than crashing, matching the
+  // rasterizer. Every kind is implemented now, so this is belt and braces.
   const content = renderContent(element);
   if (content === null) return null;
 
@@ -698,6 +700,7 @@ function renderContent(element: Element) {
 
   if (isShapeElement(element)) return <ShapeNode element={element} />;
   if (isImageElement(element)) return <ImageNode element={element} />;
+  if (isBarcodeElement(element)) return <BarcodeNode element={element} />;
 
   return null;
 }

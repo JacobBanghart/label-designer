@@ -28,8 +28,12 @@ no accounts. Full plan lives in the Obsidian vault at
 - **No ESLint, no Prettier, no standalone `tsc`.** `vp check` runs format, lint,
   and type-check together; `vp check --fix` fixes format and lint. Adding those
   tools separately is the specific mistake to avoid.
-- **`src/core/` is frozen.** It holds the contracts every other module depends
-  on. If you think it needs to change, stop and report rather than editing it.
+- **`src/core/` changes need a stated reason.** It holds the contracts every
+  other module depends on. It was frozen outright while several agents worked
+  in parallel and could collide; that phase is over. Change it when the design
+  genuinely calls for it, and say in the commit why. Never weaken a
+  `__contract__` test to make code pass -- if a contract itself has changed,
+  rewrite it to assert the new behaviour and say so.
 - **Documents are immutable.** Undo/redo is a stack of `LabelDocument`
   snapshots. Never mutate a document, element, or nested value in place.
 - **Everything is device pixels at the target DPI** (203). Inches exist only at
@@ -44,7 +48,8 @@ no accounts. Full plan lives in the Obsidian vault at
 
 ## Module ownership
 
-Concurrent agents own disjoint directories. Stay inside yours.
+Kept as a map of where things live. The strict ownership below mattered when
+several agents worked at once; it is now guidance, not a fence.
 
 | Module              | Directory                                              |
 | ------------------- | ------------------------------------------------------ |
@@ -53,11 +58,10 @@ Concurrent agents own disjoint directories. Stay inside yours.
 | Editor, UI, storage | `src/editor/**`, `src/ui/**`, `src/storage/**` (trunk) |
 | Deploy              | `Dockerfile`, `deploy/**`, `README.md`                 |
 
-Off-limits to everyone: `package.json`, `vite.config.ts`, `src/core/**`, and any
-`__contract__.test.ts`.
-
-**All dependencies are already installed.** If you think you need another, stop
-and report it -- installing one conflicts with other agents.
+Dependencies still need a deliberate decision: this ships as a single
+self-hosted bundle, so prefer implementing a bounded, well-specified thing in
+`core/` over adding a package. The barcode and QR encoders are there for that
+reason.
 
 ## Contracts
 

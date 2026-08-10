@@ -9,11 +9,14 @@ import type { TextAlign, TextElement, VerticalAlign } from "../core/document.ts"
 import type { EditorAction } from "../editor/store.ts";
 import { pxToPt, ptToPx, type DisplayUnit } from "../core/units.ts";
 import { GeometryFields } from "./GeometryFields.tsx";
+import { BindingField } from "./BindingField.tsx";
 
 interface Props {
   element: TextElement;
   unit: DisplayUnit;
   dpi: number;
+  /** Merge variable names available to bind the content to. */
+  variables: readonly string[];
   dispatch: (action: EditorAction) => void;
 }
 
@@ -25,7 +28,7 @@ const VERTICAL: { value: VerticalAlign; label: string }[] = [
   { value: "bottom", label: "Bottom" },
 ];
 
-export function Inspector({ element, unit, dpi, dispatch }: Props) {
+export function Inspector({ element, unit, dpi, variables, dispatch }: Props) {
   const update = (patch: Partial<TextElement>, transient = false) =>
     dispatch({ type: "update", id: element.id, patch, transient });
 
@@ -33,15 +36,15 @@ export function Inspector({ element, unit, dpi, dispatch }: Props) {
     <div className="inspector">
       <h2>Text</h2>
 
-      <label className="field">
-        <span>Content</span>
-        <textarea
-          rows={4}
-          value={element.text}
-          onFocus={() => dispatch({ type: "beginGesture" })}
-          onChange={(event) => update({ text: event.target.value }, true)}
-        />
-      </label>
+      <BindingField
+        variables={variables}
+        binding={element.binding}
+        onChange={(binding) => update({ binding })}
+        valueLabel="Content"
+        value={element.text}
+        onValueChange={(text) => update({ text }, true)}
+        multiline
+      />
 
       <GeometryFields element={element} unit={unit} dpi={dpi} dispatch={dispatch} />
 

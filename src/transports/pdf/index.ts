@@ -75,7 +75,10 @@ export async function buildPdf(raster: MonoRaster, options?: PrintOptions): Prom
  * label's exact physical size with zero margin, and sizing the image in inches
  * to match, so there is nothing for the browser to scale.
  */
-function printRasterViaHtml(raster: MonoRaster, options: PrintOptions): Promise<PrintResult> {
+function printRasterViaHtml(
+  rasters: readonly MonoRaster[],
+  options: PrintOptions,
+): Promise<PrintResult> {
   return new Promise((resolve) => {
     if (typeof document === "undefined" || typeof window === "undefined") {
       resolve({ ok: false, message: "No browser environment available to print in." });
@@ -84,13 +87,19 @@ function printRasterViaHtml(raster: MonoRaster, options: PrintOptions): Promise<
 
     void (async () => {
       try {
-        const png = await encodeMonoRasterAsPng(raster);
-        let binary = "";
-        for (const byte of png) binary += String.fromCharCode(byte);
-        const dataUrl = `data:image/png;base64,${btoa(binary)}`;
+        const dataUrls: string[] = [];
+        for (const raster of rasters) {
+          const png = await encodeMonoRasterAsPng(raster);
+          let binary = "";
+          for (const byte of png) binary += String.fromCharCode(byte);
+          dataUrls.push(`data:image/png;base64,${btoa(binary)}`);
+        }
 
-        const widthIn = raster.widthPx / raster.dpi;
-        const heightIn = raster.heightPx / raster.dpi;
+        // Every label in a merge run is the same stock, so one @page size
+        // covers the document.
+        const first = rasters[0]!;
+        const widthIn = first.widthPx / first.dpi;
+        const heightIn = first.heightPx / first.dpi;
         const copies = Math.max(1, Math.round(options.copies));
         const rotation = options.rotation ?? 0;
 
@@ -104,10 +113,16 @@ function printRasterViaHtml(raster: MonoRaster, options: PrintOptions): Promise<
         const pageW = quarter ? heightIn : widthIn;
         const pageH = quarter ? widthIn : heightIn;
 
-        const pages = Array.from(
-          { length: copies },
-          () => `<div class="page"><img src="${dataUrl}" alt=""></div>`,
-        ).join("");
+        // Copies are consecutive per label, matching what a printer does with a
+        // copy count -- all of label 1, then all of label 2.
+        const pages = dataUrls
+          .flatMap((url) =>
+            Array.from(
+              { length: copies },
+              () => `<div class="page"><img src="${url}" alt=""></div>`,
+            ),
+          )
+          .join("");
 
         const html = `<!doctype html><html><head><meta charset="utf-8"><style>
           @page { size: ${pageW}in ${pageH}in; margin: 0; }
@@ -219,7 +234,22 @@ export const pdfTransport: PrintTransport = {
 
   async print(raster: MonoRaster, options: PrintOptions): Promise<PrintResult> {
     try {
-      return await printRasterViaHtml(raster, options);
+      return await printRasterViaHtml([raster], options);
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  },
+
+  /*
+   * One document, one dialog.
+   *
+   * Printing a merge run label by label would put a print dialog in front of
+   * the user once per record, which for a hundred bins is unusable. Every page
+   * goes into a single HTML document instead.
+   */
+  async printBatch(rasters, options): Promise<PrintResult> {
+    try {
+      return await printRasterViaHtml(rasters, options);
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }

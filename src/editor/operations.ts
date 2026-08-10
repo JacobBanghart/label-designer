@@ -9,12 +9,14 @@ import {
   SCHEMA_VERSION,
   isShapeElement,
   type Element,
+  type BarcodeElement,
   type LabelDocument,
   type PolylineElement,
   type ShapeElement,
   type TextElement,
 } from "../core/document.ts";
 
+import type { Symbology } from "../core/barcode/index.ts";
 import { resolveGeometry, type LabelSizeId, type Orientation } from "../core/label.ts";
 import { DPI } from "../core/units.ts";
 
@@ -112,6 +114,41 @@ export function createShapeElement(doc: LabelDocument, kind: ShapeKind): ShapeEl
     case "freehand":
       return { ...base, kind, points: [], arrowHeadPx: 0 };
   }
+}
+
+/**
+ * A barcode sized so it actually encodes at the label's DPI.
+ *
+ * Sized generously on purpose. A barcode is the one element that refuses to
+ * render when its box is too small, and dropping in something that shows an
+ * error before the user has touched it reads as broken rather than as a
+ * constraint.
+ */
+export function createBarcodeElement(
+  doc: LabelDocument,
+  symbology: Symbology = "code128",
+): BarcodeElement {
+  const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
+  const square = symbology === "qr";
+
+  const widthPx = Math.round(geometry.widthPx * (square ? 0.45 : 0.8));
+  const heightPx = square ? widthPx : Math.round(geometry.heightPx * 0.15);
+  const x = Math.round((geometry.widthPx - widthPx) / 2);
+  const y = Math.round((geometry.heightPx - heightPx) / 2);
+
+  return {
+    id: nextId("barcode"),
+    kind: "barcode",
+    x,
+    y,
+    widthPx,
+    heightPx,
+    rotation: 0,
+    symbology,
+    value: symbology === "ean13" ? "012345678905" : "BIN-001",
+    ecc: "M",
+    showText: true,
+  };
 }
 
 /**
