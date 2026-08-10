@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   isImageElement,
@@ -15,6 +15,7 @@ import {
 import { getTransport } from "../core/transport.ts";
 import { useEditor } from "../editor/store.ts";
 import { createDocument, nextId } from "../editor/operations.ts";
+import { outOfBoundsIds } from "../editor/bounds.ts";
 import { rasterizeDocument } from "../raster/index.ts";
 import { downloadJson, importJson } from "../storage/local.ts";
 import { createImageElement, readImageFile } from "../editor/importImage.ts";
@@ -160,6 +161,14 @@ export function App() {
   );
 
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
+
+  /*
+   * Content outside the label is clipped on print with no error and no trace,
+   * which makes it the most dangerous failure mode here -- the design still
+   * looks complete on screen. Surfaced rather than left to be discovered on a
+   * printed label.
+   */
+  const clippedIds = useMemo(() => outOfBoundsIds(doc), [doc]);
 
   // Fit the label to whatever room the stage area has, leaving a margin. Capped
   // at 1:1 so a small label on a big screen is not blown up past its real
@@ -392,11 +401,18 @@ export function App() {
           <LabelCanvas
             doc={doc}
             selectedIds={selectedIds}
+            clippedIds={clippedIds}
             scale={scale}
             tool={tool}
             onToolUsed={() => setTool(null)}
             dispatch={dispatch}
           />
+          {clippedIds.length > 0 && (
+            <p className="warning">
+              {clippedIds.length} element{clippedIds.length === 1 ? "" : "s"} extend
+              {clippedIds.length === 1 ? "s" : ""} past the label and will be cut off when printed.
+            </p>
+          )}
           {status && <p className="status">{status}</p>}
           {saveError && <p className="error">{saveError}</p>}
         </main>

@@ -313,3 +313,13 @@ input[type="number"] {
 .field input[type="range"] {
   padding: 0;
 }
+
+.warning {
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: #fdf0ef;
+  border: 1px solid #e5c9c6;
+  color: var(--danger);
+  font-size: 13px;
+}

@@ -34,13 +34,23 @@ export type Tool = ShapeKind | null;
 interface Props {
   doc: LabelDocument;
   selectedIds: readonly string[];
+  /** Elements that would be clipped on print. */
+  clippedIds: readonly string[];
   scale: number;
   tool: Tool;
   onToolUsed: () => void;
   dispatch: (action: EditorAction) => void;
 }
 
-export function LabelCanvas({ doc, selectedIds, scale, tool, onToolUsed, dispatch }: Props) {
+export function LabelCanvas({
+  doc,
+  selectedIds,
+  clippedIds,
+  scale,
+  tool,
+  onToolUsed,
+  dispatch,
+}: Props) {
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
   const transformerRef = useRef<Konva.Transformer>(null);
   const layerRef = useRef<Konva.Layer>(null);
@@ -294,6 +304,27 @@ export function LabelCanvas({ doc, selectedIds, scale, tool, onToolUsed, dispatc
         {/* Live preview of the stroke being drawn. Not part of the document,
             so it never enters undo history. */}
         {draft && tool && <DraftPreview tool={tool} points={draft} doc={doc} />}
+
+        {/* Anything that will be clipped on print, outlined so it cannot be
+            missed. Drawn above the artwork but below the guides. */}
+        {doc.elements
+          .filter((element) => clippedIds.includes(element.id))
+          .map((element) => {
+            const box = boundingBox(element);
+            return (
+              <Rect
+                key={`clip-${element.id}`}
+                x={box.left}
+                y={box.top}
+                width={box.right - box.left}
+                height={box.bottom - box.top}
+                stroke="#b42318"
+                strokeWidth={2 / scale}
+                dash={[8 / scale, 5 / scale]}
+                listening={false}
+              />
+            );
+          })}
 
         {marquee && (
           <Rect
