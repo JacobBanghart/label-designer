@@ -100,6 +100,9 @@ export function App() {
   const [unit, setUnit] = useDisplayUnit();
   const [usbConnected, setUsbConnected] = useState(false);
   const [zoom, setZoom] = useState<number | "fit">("fit");
+  /** View offset in SCREEN pixels, from right- or middle-drag panning. */
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [sidebarTab, setSidebarTab] = useState<"design" | "printer">("design");
   const [library, setLibrary] = useState<Library>(() => loadLibrary());
 
   /*
@@ -187,6 +190,16 @@ export function App() {
    */
   const clippedIds = useMemo(() => outOfBoundsIds(doc), [doc]);
 
+  /*
+   * Selecting an element pulls the sidebar back to Design.
+   *
+   * Otherwise clicking something while the Printer tab is open appears to do
+   * nothing: the inspector is right there, just on a panel you cannot see.
+   */
+  useEffect(() => {
+    if (selectedIds.length > 0) setSidebarTab("design");
+  }, [selectedIds]);
+
   // The text element being edited inline, if it still exists (undo can remove it).
   const editingElement = useMemo(() => {
     const found = doc.elements.find((el) => el.id === editingId);
@@ -207,12 +220,16 @@ export function App() {
 
   const scale = zoom === "fit" ? fitScale : zoom;
 
-  // Grow past the panel when zoomed in so the container scrolls; fill it exactly
-  // when the label is smaller, so every visible pixel accepts a gesture.
-  const stageWidth = Math.max(stageSize.width, geometry.widthPx * scale + FIT_MARGIN_PX);
-  const stageHeight = Math.max(stageSize.height, geometry.heightPx * scale + FIT_MARGIN_PX);
-  const offsetX = (stageWidth / scale - geometry.widthPx) / 2;
-  const offsetY = (stageHeight / scale - geometry.heightPx) / 2;
+  /*
+   * The stage is always exactly the panel. Zooming in moves the view by panning
+   * rather than by growing the stage and scrolling it: scrollbars on a design
+   * canvas are awkward to use and eat space, and panning is what the gesture
+   * vocabulary here already expects.
+   */
+  const stageWidth = stageSize.width;
+  const stageHeight = stageSize.height;
+  const offsetX = (stageWidth / scale - geometry.widthPx) / 2 + pan.x / scale;
+  const offsetY = (stageHeight / scale - geometry.heightPx) / 2 + pan.y / scale;
 
   /*
    * Switching labels autosaves first (the effect above already wrote the
@@ -378,22 +395,6 @@ export function App() {
         </div>
 
         <div className="group right">
-          {/* Occasional utilities, kept out of the tool row so the tools used
-              constantly stay in one uninterrupted group. */}
-          <ExportMenu
-            label="More"
-            actions={[
-              {
-                id: "testpattern",
-                label: "Test pattern",
-                hint: "Tonal ramp and step wedge for checking 1-bit output",
-                run: () => {
-                  const element = createTestPatternElement(doc);
-                  if (element) dispatch({ type: "addElement", element });
-                },
-              },
-            ]}
-          />
           <ExportMenu
             label="Export"
             actions={[
@@ -517,6 +518,7 @@ export function App() {
               stageHeight={stageHeight}
               offsetX={offsetX}
               offsetY={offsetY}
+              onPanBy={(dx, dy) => setPan((prev) => ({ x: prev.x + dx, y: prev.y + dy }))}
               tool={tool}
               onToolUsed={() => setTool(null)}
               dispatch={dispatch}
@@ -557,8 +559,12 @@ export function App() {
             <button
               type="button"
               className="zoom-value"
-              onClick={() => setZoom("fit")}
-              title="Fit the label to the panel"
+              onClick={() => {
+                setZoom("fit");
+                // Fit doubles as "I have panned somewhere and lost the label".
+                setPan({ x: 0, y: 0 });
+              }}
+              title="Fit the label, and recentre it"
             >
               {zoom === "fit" ? "Fit" : `${Math.round(scale * 100)}%`}
             </button>
@@ -613,77 +619,120 @@ export function App() {
         </main>
 
         <aside className="sidebar">
-          {selectedElements.length > 1 ? (
-            <MultiInspector elements={selectedElements} dispatch={dispatch} />
-          ) : selected && isTextElement(selected) ? (
-            <Inspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
-          ) : selected && isShapeElement(selected) ? (
-            <ShapeInspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
-          ) : selected && isImageElement(selected) ? (
-            <ImageInspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
-          ) : (
-            <div className="empty">
-              <p>Nothing selected.</p>
-              <p className="hint">
-                Add a text element, or click one on the label to edit it. Drag to move, use the
-                handles to resize and rotate.
-              </p>
-            </div>
-          )}
+          <div className="sidebar-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sidebarTab === "design"}
+              className={sidebarTab === "design" ? "active" : ""}
+              onClick={() => setSidebarTab("design")}
+            >
+              Design
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={sidebarTab === "printer"}
+              className={sidebarTab === "printer" ? "active" : ""}
+              onClick={() => setSidebarTab("printer")}
+            >
+              Printer
+            </button>
+          </div>
 
-          {/*
+          {sidebarTab === "design" ? (
+            <>
+              {selectedElements.length > 1 ? (
+                <MultiInspector elements={selectedElements} dispatch={dispatch} />
+              ) : selected && isTextElement(selected) ? (
+                <Inspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
+              ) : selected && isShapeElement(selected) ? (
+                <ShapeInspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
+              ) : selected && isImageElement(selected) ? (
+                <ImageInspector element={selected} unit={unit} dpi={doc.dpi} dispatch={dispatch} />
+              ) : (
+                <div className="empty">
+                  <p>Nothing selected.</p>
+                  <p className="hint">
+                    Add a text element, or click one on the label to edit it. Drag to move, use the
+                    handles to resize and rotate.
+                  </p>
+                </div>
+              )}
+              <LibraryPanel
+                library={library}
+                activeId={doc.id}
+                onOpen={handleOpen}
+                onNew={handleNew}
+                onDuplicate={handleDuplicate}
+                onDelete={handleDelete}
+                onReorder={(ids) => setLibrary(reorderLibrary(ids))}
+              />
+            </>
+          ) : (
+            <>
+              {/*
             The preview lives beside the printing controls rather than the
             toolbar: it answers "what will come out", which is a question you
             ask while adjusting the printer, not while drawing.
           */}
-          <div className="preview-panel">
-            <div className="panel-head">
-              <h2>Printer output</h2>
-              <button type="button" onClick={() => setShowPreview((value) => !value)}>
-                {showPreview ? "Hide" : "Show"}
-              </button>
-            </div>
-            {showPreview ? (
-              <>
+              <div className="preview-panel">
+                <div className="panel-head">
+                  <h2>Printer output</h2>
+                  <button type="button" onClick={() => setShowPreview((value) => !value)}>
+                    {showPreview ? "Hide" : "Show"}
+                  </button>
+                </div>
+                {showPreview ? (
+                  <>
+                    <p className="hint">
+                      Exactly what gets burned &mdash; 1 bit, no grey. Click to enlarge.
+                    </p>
+                    <MonoPreview
+                      doc={doc}
+                      displayWidth={220}
+                      onExpand={() => setPreviewExpanded(true)}
+                    />
+                  </>
+                ) : (
+                  <p className="hint">Show a 1-bit render of what the printer will produce.</p>
+                )}
+              </div>
+
+              <PrinterPanel
+                onConnectedChange={setUsbConnected}
+                onTestPrint={async () => {
+                  const transport = getTransport("webusb");
+                  if (!transport) return "Direct USB transport unavailable.";
+                  try {
+                    const alignment = createAlignmentDoc(doc.sizeId, doc.orientation);
+                    const raster = await rasterizeDocument(alignment);
+                    const result = await transport.print(raster, { copies: 1 });
+                    return result.ok ? null : (result.message ?? "Test print failed.");
+                  } catch (err) {
+                    return err instanceof Error ? err.message : String(err);
+                  }
+                }}
+              />
+              <div className="printer-panel">
+                <h2>Diagnostics</h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const element = createTestPatternElement(doc);
+                    if (element) dispatch({ type: "addElement", element });
+                    setSidebarTab("design");
+                  }}
+                >
+                  Add test pattern
+                </button>
                 <p className="hint">
-                  Exactly what gets burned &mdash; 1 bit, no grey. Click to enlarge.
+                  Drops a tonal ramp and step wedge onto the label, for checking which greys survive
+                  1-bit conversion at your darkness setting.
                 </p>
-                <MonoPreview
-                  doc={doc}
-                  displayWidth={220}
-                  onExpand={() => setPreviewExpanded(true)}
-                />
-              </>
-            ) : (
-              <p className="hint">Show a 1-bit render of what the printer will produce.</p>
-            )}
-          </div>
-
-          <PrinterPanel
-            onConnectedChange={setUsbConnected}
-            onTestPrint={async () => {
-              const transport = getTransport("webusb");
-              if (!transport) return "Direct USB transport unavailable.";
-              try {
-                const alignment = createAlignmentDoc(doc.sizeId, doc.orientation);
-                const raster = await rasterizeDocument(alignment);
-                const result = await transport.print(raster, { copies: 1 });
-                return result.ok ? null : (result.message ?? "Test print failed.");
-              } catch (err) {
-                return err instanceof Error ? err.message : String(err);
-              }
-            }}
-          />
-
-          <LibraryPanel
-            library={library}
-            activeId={doc.id}
-            onOpen={handleOpen}
-            onNew={handleNew}
-            onDuplicate={handleDuplicate}
-            onDelete={handleDelete}
-            onReorder={(ids) => setLibrary(reorderLibrary(ids))}
-          />
+              </div>
+            </>
+          )}
         </aside>
       </div>
 

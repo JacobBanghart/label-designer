@@ -52,6 +52,8 @@ interface Props {
   /** Where the label sits within the stage, in LABEL pixels. */
   offsetX: number;
   offsetY: number;
+  /** Right- or middle-drag pans the view by this many screen pixels. */
+  onPanBy: (dx: number, dy: number) => void;
   tool: Tool;
   onToolUsed: () => void;
   dispatch: (action: EditorAction) => void;
@@ -68,6 +70,7 @@ export function LabelCanvas({
   stageHeight,
   offsetX,
   offsetY,
+  onPanBy,
   tool,
   onToolUsed,
   dispatch,
@@ -87,6 +90,15 @@ export function LabelCanvas({
 
   // Rubber-band rectangle, in label coordinates, while selecting.
   const [marquee, setMarquee] = useState<[number, number, number, number] | null>(null);
+
+  /*
+   * Panning with the right (or middle) button.
+   *
+   * Kept in a ref rather than state: it updates on every mousemove and none of
+   * it needs to trigger a render -- the pan itself lives in the parent.
+   */
+  const panning = useRef<{ x: number; y: number } | null>(null);
+  const [panActive, setPanActive] = useState(false);
 
   /*
    * Snap an element being dragged, and record the guides to draw.
@@ -222,7 +234,19 @@ export function LabelCanvas({
       height={stageHeight}
       scaleX={scale}
       scaleY={scale}
+      onContextMenu={(event) => {
+        // The right button pans, so its menu would fire on every pan release.
+        event.evt.preventDefault();
+      }}
       onMouseDown={(event) => {
+        // Right or middle button starts a pan and does nothing else: it must not
+        // draw, select, or clear the selection.
+        if (event.evt.button === 2 || event.evt.button === 1) {
+          event.evt.preventDefault();
+          panning.current = { x: event.evt.clientX, y: event.evt.clientY };
+          setPanActive(true);
+          return;
+        }
         if (tool) {
           handleDrawStart();
           return;
@@ -236,6 +260,11 @@ export function LabelCanvas({
         if (point) setMarquee([point[0], point[1], point[0], point[1]]);
       }}
       onMouseMove={(event) => {
+        if (panning.current) {
+          onPanBy(event.evt.clientX - panning.current.x, event.evt.clientY - panning.current.y);
+          panning.current = { x: event.evt.clientX, y: event.evt.clientY };
+          return;
+        }
         handleDrawMove();
         if (!marquee) return;
         const point = pointerInLabelSpace();
@@ -243,10 +272,17 @@ export function LabelCanvas({
         void event;
       }}
       onMouseUp={(event) => {
+        if (panning.current) {
+          panning.current = null;
+          setPanActive(false);
+          return;
+        }
         handleDrawEnd();
         commitMarquee(event.evt.shiftKey);
       }}
       onMouseLeave={() => {
+        panning.current = null;
+        setPanActive(false);
         handleDrawEnd();
         setMarquee(null);
       }}
@@ -289,7 +325,7 @@ export function LabelCanvas({
       style={{
         // The workspace, not the label. The label itself is drawn inside.
         background: "transparent",
-        cursor: tool ? "crosshair" : "default",
+        cursor: panActive ? "grabbing" : tool ? "crosshair" : "default",
       }}
     >
       <Layer ref={layerRef}>

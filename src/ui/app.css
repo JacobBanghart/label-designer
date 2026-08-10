@@ -125,8 +125,8 @@ input[type="number"] {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Scrolls only when zoomed past the panel; at Fit the stage matches exactly. */
-  overflow: auto;
+  /* Never scrolls: the view moves by panning (right- or middle-drag) instead. */
+  overflow: hidden;
   padding: 0;
 }
 
@@ -603,4 +603,45 @@ input[type="number"] {
 
 .zoom-controls .zoom-value {
   min-width: 52px;
+}
+
+/* ---- sidebar tabs ---- */
+
+.sidebar-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+
+.sidebar-tabs button {
+  flex: 1;
+  border: 1px solid transparent;
+  background: none;
+  padding: 6px 10px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.sidebar-tabs button:hover {
+  color: var(--text);
+}
+
+.sidebar-tabs button.active {
+  background: #f2f1ff;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/*
+ * The first panel in a tab should not carry the separator that spaces panels
+ * apart, or every tab opens with a stray rule under the tab strip.
+ */
+.sidebar-tabs + * > .preview-panel:first-child,
+.sidebar-tabs + * > .printer-panel:first-child,
+.sidebar-tabs + * > .library:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
