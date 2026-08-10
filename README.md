@@ -32,7 +32,8 @@ Currently supported:
   other elements' edges and centres. Hold `Alt` while dragging to suspend it
 - Undo/redo, with drag gestures collapsed into a single history step
 - A live 1-bit preview showing exactly what the printer will burn
-- Autosave to browser storage, plus JSON export/import
+- A library of named labels — create, duplicate, switch, delete. Autosaved
+  continuously, so there is no save button to forget. Plus JSON export/import
 - Printing via the browser's native print dialog
 
 Not yet implemented, in rough priority order: barcodes and QR, image import,

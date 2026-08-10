@@ -1,14 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isShapeElement, isTextElement } from "../core/document.ts";
+import { isShapeElement, isTextElement, type LabelDocument } from "../core/document.ts";
 import { LABEL_SIZES, resolveGeometry, type LabelSizeId } from "../core/label.ts";
 import { getTransport } from "../core/transport.ts";
 import { useEditor } from "../editor/store.ts";
+import { createDocument, nextId } from "../editor/operations.ts";
 import { rasterizeDocument } from "../raster/index.ts";
-import { downloadJson, importJson, load, save } from "../storage/local.ts";
+import { downloadJson, importJson } from "../storage/local.ts";
+import {
+  loadActive,
+  loadLibrary,
+  removeFromLibrary,
+  saveToLibrary,
+  setActiveId,
+  type Library,
+} from "../storage/library.ts";
 import { Inspector } from "./Inspector.tsx";
 import { LabelCanvas, type Tool } from "./LabelCanvas.tsx";
 import { ShapeInspector } from "./ShapeInspector.tsx";
+import { LibraryPanel } from "./LibraryPanel.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
 import { useElementSize } from "./useElementSize.ts";
 
@@ -46,7 +56,7 @@ export function App() {
    * overwrites the saved design. StrictMode's double-mount then reads that
    * empty doc straight back. Seeding means no empty document ever exists.
    */
-  const [initialDoc] = useState(() => load() ?? undefined);
+  const [initialDoc] = useState(() => loadActive() ?? undefined);
   const { doc, selected, selectedId, dispatch, canUndo, canRedo } = useEditor(initialDoc);
   const [copies, setCopies] = useState(1);
   const [status, setStatus] = useState<string | null>(null);
@@ -54,6 +64,7 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [stageRef, stageSize] = useElementSize<HTMLElement>();
   const [tool, setTool] = useState<Tool>(null);
+  const [library, setLibrary] = useState<Library>(() => loadLibrary());
 
   /*
    * Single-key tool switching, the way every drawing app works.
@@ -95,7 +106,8 @@ export function App() {
   // from storage during initialisation (see useEditor call above) -- there is
   // never a moment where an empty document could be written over saved work.
   useEffect(() => {
-    save(doc);
+    saveToLibrary(doc);
+    setLibrary(loadLibrary());
   }, [doc]);
 
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
@@ -107,6 +119,49 @@ export function App() {
     1,
     stageSize.width > 0 ? (stageSize.width - CANVAS_MARGIN) / geometry.widthPx : FALLBACK_SCALE,
     stageSize.height > 0 ? (stageSize.height - CANVAS_MARGIN) / geometry.heightPx : FALLBACK_SCALE,
+  );
+
+  /*
+   * Switching labels autosaves first (the effect above already wrote the
+   * current doc), so there is no explicit save button to forget. Opening is
+   * therefore always safe.
+   */
+  const handleOpen = useCallback(
+    (next: LabelDocument) => {
+      setActiveId(next.id);
+      dispatch({ type: "load", doc: next });
+      setStatus(null);
+    },
+    [dispatch],
+  );
+
+  const handleNew = useCallback(() => {
+    const fresh = createDocument(doc.sizeId, doc.orientation);
+    saveToLibrary(fresh);
+    setLibrary(loadLibrary());
+    dispatch({ type: "load", doc: fresh });
+  }, [dispatch, doc.sizeId, doc.orientation]);
+
+  const handleDuplicate = useCallback(() => {
+    // New id and a distinct name, otherwise the copy overwrites the original
+    // on the next autosave.
+    const copy = { ...doc, id: nextId("doc"), name: `${doc.name} copy` };
+    saveToLibrary(copy);
+    setLibrary(loadLibrary());
+    dispatch({ type: "load", doc: copy });
+  }, [dispatch, doc]);
+
+  const handleDelete = useCallback(
+    (id: string) => {
+      const remaining = removeFromLibrary(id);
+      setLibrary(remaining);
+      if (id !== doc.id) return;
+
+      // Deleting the open label has to leave something on screen.
+      const next = loadActive() ?? createDocument();
+      dispatch({ type: "load", doc: next });
+    },
+    [dispatch, doc.id],
   );
 
   const handlePrint = useCallback(async () => {
@@ -276,6 +331,15 @@ export function App() {
               </p>
             </div>
           )}
+
+          <LibraryPanel
+            library={library}
+            activeId={doc.id}
+            onOpen={handleOpen}
+            onNew={handleNew}
+            onDuplicate={handleDuplicate}
+            onDelete={handleDelete}
+          />
 
           {showPreview && (
             <div className="preview-panel">

@@ -1,0 +1,177 @@
+import { beforeEach, describe, expect, it } from "vite-plus/test";
+
+import { SCHEMA_VERSION, type LabelDocument } from "../core/document.ts";
+import { DPI } from "../core/units.ts";
+import {
+  loadActive,
+  loadLibrary,
+  parseLibrary,
+  removeFromLibrary,
+  saveToLibrary,
+  setActiveId,
+  sortedEntries,
+} from "./library.ts";
+
+/** Minimal in-memory localStorage; these tests run in the node environment. */
+function installStorage() {
+  const store = new Map<string, string>();
+  const mock: Storage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key) => store.get(key) ?? null,
+    key: (index) => [...store.keys()][index] ?? null,
+    removeItem: (key) => void store.delete(key),
+    setItem: (key, value) => void store.set(key, value),
+  };
+  globalThis.localStorage = mock;
+  return store;
+}
+
+function doc(id: string, name = id): LabelDocument {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id,
+    name,
+    sizeId: "4x6",
+    orientation: "portrait",
+    dpi: DPI,
+    elements: [],
+  };
+}
+
+let store: Map<string, string>;
+beforeEach(() => {
+  store = installStorage();
+});
+
+describe("saveToLibrary", () => {
+  it("stores a document and makes it active", () => {
+    saveToLibrary(doc("a"));
+
+    expect(Object.keys(loadLibrary())).toEqual(["a"]);
+    expect(loadActive()?.id).toBe("a");
+  });
+
+  it("keeps several documents side by side", () => {
+    saveToLibrary(doc("a"));
+    saveToLibrary(doc("b"));
+
+    expect(Object.keys(loadLibrary()).sort()).toEqual(["a", "b"]);
+  });
+
+  it("overwrites in place rather than duplicating", () => {
+    saveToLibrary(doc("a", "first"));
+    saveToLibrary(doc("a", "renamed"));
+
+    const library = loadLibrary();
+    expect(Object.keys(library)).toEqual(["a"]);
+    expect(library.a!.doc.name).toBe("renamed");
+  });
+});
+
+describe("legacy import", () => {
+  it("adopts a pre-library document so upgrading does not look like data loss", () => {
+    store.set("label-designer:current", JSON.stringify(doc("old", "Old label")));
+
+    const library = loadLibrary();
+
+    expect(Object.keys(library)).toEqual(["old"]);
+    expect(loadActive()?.name).toBe("Old label");
+  });
+
+  it("keeps the legacy document alongside newly created ones", () => {
+    store.set("label-designer:current", JSON.stringify(doc("old")));
+    saveToLibrary(doc("a"));
+
+    // Creating a new label must not discard the pre-upgrade one.
+    expect(Object.keys(loadLibrary()).sort()).toEqual(["a", "old"]);
+  });
+
+  it("never resurrects the legacy document after it is deleted", () => {
+    store.set("label-designer:current", JSON.stringify(doc("old")));
+    loadLibrary(); // performs the import
+
+    removeFromLibrary("old");
+
+    // The legacy key is still in storage; deleting everything must not bring
+    // it back from the dead on the next load.
+    expect(Object.keys(loadLibrary())).toEqual([]);
+    expect(loadActive()).toBeNull();
+  });
+});
+
+describe("removeFromLibrary", () => {
+  it("deletes the entry", () => {
+    saveToLibrary(doc("a"));
+    saveToLibrary(doc("b"));
+
+    removeFromLibrary("a");
+
+    expect(Object.keys(loadLibrary())).toEqual(["b"]);
+  });
+
+  it("moves the active document on when the active one is deleted", () => {
+    saveToLibrary(doc("a"));
+    saveToLibrary(doc("b"));
+    setActiveId("b");
+
+    removeFromLibrary("b");
+
+    expect(loadActive()?.id).toBe("a");
+  });
+
+  it("leaves nothing active when the last label goes", () => {
+    saveToLibrary(doc("a"));
+
+    removeFromLibrary("a");
+
+    expect(loadActive()).toBeNull();
+  });
+});
+
+describe("loadActive", () => {
+  it("falls back to the newest label when the active id is stale", () => {
+    saveToLibrary(doc("a"));
+    saveToLibrary(doc("b"));
+    // Point at something that no longer exists.
+    store.set("label-designer:active", JSON.stringify("ghost"));
+
+    // Must not start blank on top of existing work.
+    expect(loadActive()).not.toBeNull();
+  });
+
+  it("returns null for an empty library", () => {
+    expect(loadActive()).toBeNull();
+  });
+});
+
+describe("parseLibrary", () => {
+  it("drops corrupt entries instead of failing the whole library", () => {
+    const library = parseLibrary({
+      good: { doc: doc("good"), updatedAt: 1 },
+      bad: { doc: { nonsense: true }, updatedAt: 2 },
+      alsoBad: "not an object",
+    });
+
+    expect(Object.keys(library)).toEqual(["good"]);
+  });
+
+  it("survives a non-object payload", () => {
+    expect(parseLibrary(null)).toEqual({});
+    expect(parseLibrary("garbage")).toEqual({});
+  });
+});
+
+describe("sortedEntries", () => {
+  it("orders by most recently updated", () => {
+    const library = {
+      a: { doc: doc("a"), updatedAt: 100 },
+      b: { doc: doc("b"), updatedAt: 300 },
+      c: { doc: doc("c"), updatedAt: 200 },
+    };
+
+    expect(sortedEntries(library).map((entry) => entry.doc.id)).toEqual(["b", "c", "a"]);
+  });
+});

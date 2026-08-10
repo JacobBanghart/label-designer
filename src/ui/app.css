@@ -244,3 +244,62 @@ input[type="number"] {
   border-color: var(--accent);
   color: #fff;
 }
+
+/* ---- library ---- */
+
+.library {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.library-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.library-list li {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.library-list .open {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 6px 8px;
+}
+
+.library-list li.active .open {
+  border-color: var(--accent);
+  background: #f2f1ff;
+}
+
+.library-list .name {
+  font-weight: 600;
+}
+
+.library-list .meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.library-list .remove {
+  padding: 0 9px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.library-list .remove:hover {
+  color: var(--danger);
+  border-color: #e5c9c6;
+}
