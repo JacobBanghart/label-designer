@@ -26,6 +26,7 @@ import {
   setActiveId,
   type Library,
 } from "../storage/library.ts";
+import { useAutosave, type AutosaveResult } from "../storage/useAutosave.ts";
 import { Inspector } from "./Inspector.tsx";
 import { LabelCanvas, type Tool } from "./LabelCanvas.tsx";
 import { ShapeInspector } from "./ShapeInspector.tsx";
@@ -122,17 +123,22 @@ export function App() {
   // Autosave. Safe to run unconditionally only because the editor is seeded
   // from storage during initialisation (see useEditor call above) -- there is
   // never a moment where an empty document could be written over saved work.
-  useEffect(() => {
-    try {
-      saveToLibrary(doc);
-      setLibrary(loadLibrary());
-      setSaveError(null);
-    } catch (err) {
-      // Quota exhaustion is realistic once a label carries images. Silently
-      // not saving would be the worst possible response.
-      setSaveError(err instanceof Error ? err.message : "Could not save.");
-    }
-  }, [doc]);
+  /*
+   * Autosave is debounced: the write path is synchronous and a library holding
+   * image labels is megabytes, which drops frames while typing. A pending save
+   * is flushed when the page hides, so debouncing cannot cost the last edit.
+   */
+  const persist = useCallback((next: LabelDocument) => {
+    // Quota exhaustion is realistic once a label carries images. Silently not
+    // saving would be the worst possible response, so this throws and the
+    // result handler surfaces it.
+    saveToLibrary(next);
+    setLibrary(loadLibrary());
+  }, []);
+
+  const onSaveResult = useCallback(({ error }: AutosaveResult) => setSaveError(error), []);
+
+  useAutosave(doc, persist, onSaveResult);
 
   /** Import one or more dropped/selected image files. */
   const importImages = useCallback(
