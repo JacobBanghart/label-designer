@@ -7,12 +7,22 @@
 
 import {
   SCHEMA_VERSION,
+  isShapeElement,
   type Element,
   type LabelDocument,
+  type PolylineElement,
+  type ShapeElement,
   type TextElement,
 } from "../core/document.ts";
+
 import { resolveGeometry, type LabelSizeId, type Orientation } from "../core/label.ts";
 import { DPI } from "../core/units.ts";
+
+/** The drawing tools the toolbar offers. */
+export type ShapeKind = ShapeElement["kind"];
+
+/** Below this, a drag is treated as a stray click rather than a shape. */
+const MIN_DRAG_PX = 4;
 
 let idCounter = 0;
 
@@ -60,6 +70,131 @@ export function createTextElement(doc: LabelDocument, text = "Text"): TextElemen
     italic: false,
     align: "left",
   };
+}
+
+/** Default outline thickness, scaled so it stays visible on a small label. */
+function defaultStroke(doc: LabelDocument): number {
+  const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
+  // ~0.6% of the short edge, floored at 2px so it survives 1-bit thresholding.
+  return Math.max(2, Math.round(Math.min(geometry.widthPx, geometry.heightPx) * 0.006));
+}
+
+/**
+ * A shape sized and centred sensibly for the given document.
+ *
+ * Used by the toolbar's click-to-add path. Drag-to-draw builds its own geometry
+ * from the gesture instead.
+ */
+export function createShapeElement(doc: LabelDocument, kind: ShapeKind): ShapeElement {
+  const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
+  const widthPx = Math.round(geometry.widthPx * 0.4);
+  const heightPx = Math.round(geometry.heightPx * 0.2);
+  const x = Math.round((geometry.widthPx - widthPx) / 2);
+  const y = Math.round((geometry.heightPx - heightPx) / 2);
+  const strokeWidthPx = defaultStroke(doc);
+  const base = { id: nextId(kind), x, y, widthPx, heightPx, rotation: 0, strokeWidthPx };
+
+  switch (kind) {
+    case "rect":
+      return { ...base, kind, filled: false, cornerRadiusPx: 0 };
+    case "ellipse":
+      return { ...base, kind, filled: false };
+    case "line":
+    case "arrow":
+      return {
+        ...base,
+        kind,
+        // Horizontal, spanning the box, vertically centred.
+        points: [0, 0.5, 1, 0.5],
+        arrowHeadPx: kind === "arrow" ? Math.max(8, strokeWidthPx * 4) : 0,
+      };
+    case "freehand":
+      return { ...base, kind, points: [], arrowHeadPx: 0 };
+  }
+}
+
+/**
+ * Build a polyline element from a drag gesture in label coordinates.
+ *
+ * The bounding box comes from the points' extent, and the points are then
+ * normalised into it. A perfectly straight horizontal or vertical stroke yields
+ * a zero-height or zero-width box, which is legal -- callers must not divide by
+ * a dimension without guarding.
+ */
+export function polylineFromPoints(
+  doc: LabelDocument,
+  kind: "line" | "arrow" | "freehand",
+  absolutePoints: readonly number[],
+): PolylineElement | null {
+  if (absolutePoints.length < 4) return null;
+
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (let i = 0; i < absolutePoints.length - 1; i += 2) {
+    xs.push(absolutePoints[i]!);
+    ys.push(absolutePoints[i + 1]!);
+  }
+
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const widthPx = Math.round(maxX - minX);
+  const heightPx = Math.round(maxY - minY);
+  if (widthPx < MIN_DRAG_PX && heightPx < MIN_DRAG_PX) return null;
+
+  const normalised: number[] = [];
+  for (let i = 0; i < xs.length; i++) {
+    normalised.push(widthPx === 0 ? 0.5 : (xs[i]! - minX) / (maxX - minX));
+    normalised.push(heightPx === 0 ? 0.5 : (ys[i]! - minY) / (maxY - minY));
+  }
+
+  const strokeWidthPx = defaultStroke(doc);
+  return {
+    id: nextId(kind),
+    kind,
+    x: Math.round(minX),
+    y: Math.round(minY),
+    widthPx,
+    heightPx,
+    rotation: 0,
+    strokeWidthPx,
+    points: normalised,
+    arrowHeadPx: kind === "arrow" ? Math.max(8, strokeWidthPx * 4) : 0,
+  };
+}
+
+/**
+ * Build a rect or ellipse from a two-point drag in label coordinates.
+ *
+ * Returns null for a gesture too small to be a deliberate shape -- a stray
+ * click should not leave an invisible speck on the label.
+ */
+export function boxElementFromDrag(
+  doc: LabelDocument,
+  kind: "rect" | "ellipse",
+  points: readonly number[],
+): ShapeElement | null {
+  if (points.length < 4) return null;
+  const [x1, y1, x2, y2] = points as [number, number, number, number];
+
+  const widthPx = Math.round(Math.abs(x2 - x1));
+  const heightPx = Math.round(Math.abs(y2 - y1));
+  if (widthPx < MIN_DRAG_PX && heightPx < MIN_DRAG_PX) return null;
+
+  const base = {
+    id: nextId(kind),
+    x: Math.round(Math.min(x1, x2)),
+    y: Math.round(Math.min(y1, y2)),
+    widthPx,
+    heightPx,
+    rotation: 0,
+    strokeWidthPx: defaultStroke(doc),
+  };
+
+  return kind === "rect"
+    ? { ...base, kind, filled: false, cornerRadiusPx: 0 }
+    : { ...base, kind, filled: false };
 }
 
 export function addElement(doc: LabelDocument, element: Element): LabelDocument {
@@ -124,9 +259,16 @@ export function setLabelSize(doc: LabelDocument, sizeId: LabelSizeId): LabelDocu
         widthPx: Math.round(el.widthPx * scaleX),
         heightPx: Math.round(el.heightPx * scaleY),
       };
-      return el.kind === "text"
-        ? { ...scaled, fontSizePx: Math.max(8, Math.round(el.fontSizePx * scaleFont)) }
-        : scaled;
+      // Font size and stroke width are thicknesses, not extents -- scale them
+      // uniformly so they do not distort, and floor them so they survive 1-bit
+      // thresholding after a big downscale.
+      if (el.kind === "text") {
+        return { ...scaled, fontSizePx: Math.max(8, Math.round(el.fontSizePx * scaleFont)) };
+      }
+      if (isShapeElement(el)) {
+        return { ...scaled, strokeWidthPx: Math.max(1, Math.round(el.strokeWidthPx * scaleFont)) };
+      }
+      return scaled;
     }),
   };
 }

@@ -1,18 +1,28 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { isTextElement } from "../core/document.ts";
+import { isShapeElement, isTextElement } from "../core/document.ts";
 import { LABEL_SIZES, resolveGeometry, type LabelSizeId } from "../core/label.ts";
 import { getTransport } from "../core/transport.ts";
 import { useEditor } from "../editor/store.ts";
 import { rasterizeDocument } from "../raster/index.ts";
 import { downloadJson, importJson, load, save } from "../storage/local.ts";
 import { Inspector } from "./Inspector.tsx";
-import { LabelCanvas } from "./LabelCanvas.tsx";
+import { LabelCanvas, type Tool } from "./LabelCanvas.tsx";
+import { ShapeInspector } from "./ShapeInspector.tsx";
 import { MonoPreview } from "./MonoPreview.tsx";
 import { useElementSize } from "./useElementSize.ts";
 
 /** Breathing room around the label inside the stage area, in CSS pixels. */
 const CANVAS_MARGIN = 48;
+/** Drawing tools, in toolbar order. Each is drag-to-draw on the canvas. */
+const TOOLS = [
+  { kind: "rect", label: "Rect", hint: "Rectangle (R) -- drag on the label" },
+  { kind: "ellipse", label: "Ellipse", hint: "Ellipse (O) -- drag on the label" },
+  { kind: "line", label: "Line", hint: "Line (L) -- drag on the label" },
+  { kind: "arrow", label: "Arrow", hint: "Arrow (A) -- drag on the label" },
+  { kind: "freehand", label: "Pen", hint: "Freehand pen (P) -- drag on the label" },
+] as const;
+
 /** Used for the first paint, before the ResizeObserver has measured. */
 const FALLBACK_SCALE = 0.4;
 
@@ -33,6 +43,7 @@ export function App() {
   const [showPreview, setShowPreview] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const [stageRef, stageSize] = useElementSize<HTMLElement>();
+  const [tool, setTool] = useState<Tool>(null);
 
   // Autosave. Safe to run unconditionally only because the editor is seeded
   // from storage during initialisation (see useEditor call above) -- there is
@@ -119,10 +130,29 @@ export function App() {
           </button>
         </div>
 
-        <div className="group">
-          <button type="button" onClick={() => dispatch({ type: "addText" })}>
-            Add text
+        <div className="group tools">
+          <button
+            type="button"
+            className={tool === null ? "active" : ""}
+            onClick={() => setTool(null)}
+            title="Select and move (V)"
+          >
+            Select
           </button>
+          <button type="button" onClick={() => dispatch({ type: "addText" })} title="Add text (T)">
+            Text
+          </button>
+          {TOOLS.map(({ kind, label, hint }) => (
+            <button
+              key={kind}
+              type="button"
+              className={tool === kind ? "active" : ""}
+              onClick={() => setTool(tool === kind ? null : kind)}
+              title={hint}
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="group right">
@@ -175,13 +205,22 @@ export function App() {
             {geometry.widthIn}&Prime; &times; {geometry.heightIn}&Prime; &middot; {geometry.widthPx}{" "}
             &times; {geometry.heightPx} px @ {doc.dpi} DPI
           </div>
-          <LabelCanvas doc={doc} selectedId={selectedId} scale={scale} dispatch={dispatch} />
+          <LabelCanvas
+            doc={doc}
+            selectedId={selectedId}
+            scale={scale}
+            tool={tool}
+            onToolUsed={() => setTool(null)}
+            dispatch={dispatch}
+          />
           {status && <p className="status">{status}</p>}
         </main>
 
         <aside className="sidebar">
           {selected && isTextElement(selected) ? (
             <Inspector element={selected} dispatch={dispatch} />
+          ) : selected && isShapeElement(selected) ? (
+            <ShapeInspector element={selected} dispatch={dispatch} />
           ) : (
             <div className="empty">
               <p>Nothing selected.</p>

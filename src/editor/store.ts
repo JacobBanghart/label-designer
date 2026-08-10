@@ -22,6 +22,7 @@ import {
 import {
   addElement,
   createDocument,
+  createShapeElement,
   createTextElement,
   nextId,
   removeElement,
@@ -30,6 +31,7 @@ import {
   setLabelSize,
   setOrientation,
   updateElement,
+  type ShapeKind,
 } from "./operations.ts";
 
 export interface EditorState {
@@ -40,6 +42,8 @@ export interface EditorState {
 export type EditorAction =
   | { type: "load"; doc: LabelDocument }
   | { type: "addText" }
+  | { type: "addShape"; kind: ShapeKind }
+  | { type: "addElement"; element: Element }
   | { type: "update"; id: string; patch: Partial<Element>; transient?: boolean }
   | { type: "remove"; id: string }
   | { type: "reorder"; id: string; direction: "forward" | "backward" }
@@ -67,6 +71,21 @@ function reducer(state: EditorState, action: EditorAction): EditorState {
         selectedId: element.id,
       };
     }
+
+    case "addShape": {
+      const element = createShapeElement(doc, action.kind);
+      return {
+        history: push(state.history, addElement(doc, element)),
+        selectedId: element.id,
+      };
+    }
+
+    // Used by drag-to-draw, which builds its own geometry from the gesture.
+    case "addElement":
+      return {
+        history: push(state.history, addElement(doc, action.element)),
+        selectedId: action.element.id,
+      };
 
     case "update": {
       const next = updateElement(doc, action.id, action.patch);

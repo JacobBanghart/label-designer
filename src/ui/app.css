@@ -234,3 +234,13 @@ input[type="number"] {
   /* Never smooth a 1-bit image -- show the real pixels. */
   image-rendering: pixelated;
 }
+
+.toolbar .group.tools button {
+  min-width: 54px;
+}
+
+.toolbar .group.tools button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}

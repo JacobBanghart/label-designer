@@ -4,7 +4,17 @@
  */
 
 import { domCanvasFactory, type CanvasFactory, type Ctx2D } from "../core/canvas.ts";
-import { isTextElement, type LabelDocument, type TextElement } from "../core/document.ts";
+import {
+  isPolylineElement,
+  isTextElement,
+  type Element,
+  type ElementBase,
+  type EllipseElement,
+  type LabelDocument,
+  type PolylineElement,
+  type RectElement,
+  type TextElement,
+} from "../core/document.ts";
 import { resolveGeometry } from "../core/label.ts";
 import { createMonoRaster, setPixel, type MonoRaster } from "../core/raster.ts";
 
@@ -131,7 +141,17 @@ function wrapText(ctx: Ctx2D, text: string, maxWidth: number): string[] {
   return lines;
 }
 
-function drawTextElement(ctx: Ctx2D, el: TextElement): void {
+/**
+ * Every element -- text and shapes alike -- rotates about its centre. This
+ * wraps that shared save/translate/rotate/restore convention so `draw` can
+ * work purely in box-local coordinates, where (0, 0) is the box centre and
+ * the top-left corner is (-widthPx / 2, -heightPx / 2).
+ */
+function withElementBox<T extends ElementBase>(
+  ctx: Ctx2D,
+  el: T,
+  draw: (widthPx: number, heightPx: number) => void,
+): void {
   ctx.save();
 
   const centreX = el.x + el.widthPx / 2;
@@ -139,29 +159,211 @@ function drawTextElement(ctx: Ctx2D, el: TextElement): void {
   ctx.translate(centreX, centreY);
   ctx.rotate((el.rotation * Math.PI) / 180);
 
-  ctx.fillStyle = "#000000";
-  ctx.font = buildFont(el);
-  ctx.textBaseline = "top";
-  ctx.textAlign = el.align;
-
-  const lines = wrapText(ctx, el.text, el.widthPx);
-  const lineHeight = el.fontSizePx * 1.2;
-
-  // Local box coords, relative to the (now-translated) centre.
-  const localLeft = -el.widthPx / 2;
-  const localTop = -el.heightPx / 2;
-
-  let drawX: number;
-  if (el.align === "center") drawX = localLeft + el.widthPx / 2;
-  else if (el.align === "right") drawX = localLeft + el.widthPx;
-  else drawX = localLeft;
-
-  for (let i = 0; i < lines.length; i++) {
-    const y = localTop + i * lineHeight;
-    ctx.fillText(lines[i]!, drawX, y);
-  }
+  draw(el.widthPx, el.heightPx);
 
   ctx.restore();
+}
+
+function drawTextElement(ctx: Ctx2D, el: TextElement): void {
+  withElementBox(ctx, el, (widthPx, heightPx) => {
+    ctx.fillStyle = "#000000";
+    ctx.font = buildFont(el);
+    ctx.textBaseline = "top";
+    ctx.textAlign = el.align;
+
+    const lines = wrapText(ctx, el.text, widthPx);
+    const lineHeight = el.fontSizePx * 1.2;
+
+    // Local box coords, relative to the (now-translated) centre.
+    const localLeft = -widthPx / 2;
+    const localTop = -heightPx / 2;
+
+    let drawX: number;
+    if (el.align === "center") drawX = localLeft + widthPx / 2;
+    else if (el.align === "right") drawX = localLeft + widthPx;
+    else drawX = localLeft;
+
+    for (let i = 0; i < lines.length; i++) {
+      const y = localTop + i * lineHeight;
+      ctx.fillText(lines[i]!, drawX, y);
+    }
+  });
+}
+
+/**
+ * Build a rectangle path in box-local coordinates (centred on the origin),
+ * with corners rounded to `radius`. Built from line/quadraticCurveTo segments
+ * since `Ctx2D` has no `roundRect`.
+ */
+function buildRoundedRectPath(ctx: Ctx2D, widthPx: number, heightPx: number, radius: number): void {
+  const left = -widthPx / 2;
+  const top = -heightPx / 2;
+  const right = widthPx / 2;
+  const bottom = heightPx / 2;
+
+  ctx.beginPath();
+  if (radius <= 0) {
+    ctx.rect(left, top, widthPx, heightPx);
+    return;
+  }
+
+  ctx.moveTo(left + radius, top);
+  ctx.lineTo(right - radius, top);
+  ctx.quadraticCurveTo(right, top, right, top + radius);
+  ctx.lineTo(right, bottom - radius);
+  ctx.quadraticCurveTo(right, bottom, right - radius, bottom);
+  ctx.lineTo(left + radius, bottom);
+  ctx.quadraticCurveTo(left, bottom, left, bottom - radius);
+  ctx.lineTo(left, top + radius);
+  ctx.quadraticCurveTo(left, top, left + radius, top);
+  ctx.closePath();
+}
+
+function drawRectElement(ctx: Ctx2D, el: RectElement): void {
+  withElementBox(ctx, el, (widthPx, heightPx) => {
+    if (widthPx <= 0 || heightPx <= 0) return;
+
+    // Clamp so the radius can never exceed half the smaller side -- past that
+    // point the "corner" arcs would overlap and self-intersect.
+    const radius = Math.max(0, Math.min(el.cornerRadiusPx, widthPx / 2, heightPx / 2));
+    buildRoundedRectPath(ctx, widthPx, heightPx, radius);
+
+    if (el.filled) {
+      ctx.fillStyle = "#000000";
+      ctx.fill();
+    }
+    if (el.strokeWidthPx > 0) {
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = el.strokeWidthPx;
+      ctx.stroke();
+    }
+  });
+}
+
+function drawEllipseElement(ctx: Ctx2D, el: EllipseElement): void {
+  withElementBox(ctx, el, (widthPx, heightPx) => {
+    if (widthPx <= 0 || heightPx <= 0) return;
+
+    ctx.beginPath();
+    ctx.ellipse(0, 0, widthPx / 2, heightPx / 2, 0, 0, Math.PI * 2);
+    ctx.closePath();
+
+    if (el.filled) {
+      ctx.fillStyle = "#000000";
+      ctx.fill();
+    }
+    if (el.strokeWidthPx > 0) {
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = el.strokeWidthPx;
+      ctx.stroke();
+    }
+  });
+}
+
+type Point = readonly [number, number];
+
+/**
+ * Midpoint-based quadratic smoothing: each raw vertex becomes a curve control
+ * point, and the curve passes through the midpoint between consecutive
+ * vertices rather than through the vertices themselves. This reads far better
+ * for freehand pen input than raw `lineTo` segments, which look jagged.
+ */
+function drawSmoothedPath(ctx: Ctx2D, pts: readonly Point[]): void {
+  ctx.moveTo(pts[0]![0], pts[0]![1]);
+
+  if (pts.length === 2) {
+    ctx.lineTo(pts[1]![0], pts[1]![1]);
+    return;
+  }
+
+  for (let i = 1; i < pts.length - 1; i++) {
+    const curr = pts[i]!;
+    const next = pts[i + 1]!;
+    const midX = (curr[0] + next[0]) / 2;
+    const midY = (curr[1] + next[1]) / 2;
+    ctx.quadraticCurveTo(curr[0], curr[1], midX, midY);
+  }
+
+  const last = pts[pts.length - 1]!;
+  ctx.lineTo(last[0], last[1]);
+}
+
+/** Draw a filled triangular arrowhead of `length`, tip at `to`, oriented along `from -> to`. */
+function drawArrowHead(ctx: Ctx2D, from: Point, to: Point, length: number): void {
+  const dx = to[0] - from[0];
+  const dy = to[1] - from[1];
+  if (dx === 0 && dy === 0) return;
+
+  const angle = Math.atan2(dy, dx);
+  const spread = Math.PI / 7; // ~25.7 degrees half-angle, a typical arrowhead shape.
+
+  const leftX = to[0] - length * Math.cos(angle - spread);
+  const leftY = to[1] - length * Math.sin(angle - spread);
+  const rightX = to[0] - length * Math.cos(angle + spread);
+  const rightY = to[1] - length * Math.sin(angle + spread);
+
+  ctx.beginPath();
+  ctx.moveTo(to[0], to[1]);
+  ctx.lineTo(leftX, leftY);
+  ctx.lineTo(rightX, rightY);
+  ctx.closePath();
+  ctx.fillStyle = "#000000";
+  ctx.fill();
+}
+
+function drawPolylineElement(ctx: Ctx2D, el: PolylineElement): void {
+  // Fewer than two points (four numbers) is a degenerate path: render nothing.
+  if (el.points.length < 4) return;
+
+  withElementBox(ctx, el, (widthPx, heightPx) => {
+    const localLeft = -widthPx / 2;
+    const localTop = -heightPx / 2;
+
+    const pts: Point[] = [];
+    for (let i = 0; i + 1 < el.points.length; i += 2) {
+      const nx = el.points[i]!;
+      const ny = el.points[i + 1]!;
+      pts.push([localLeft + nx * widthPx, localTop + ny * heightPx]);
+    }
+    if (pts.length < 2) return;
+
+    if (el.strokeWidthPx > 0) {
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = el.strokeWidthPx;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      ctx.beginPath();
+      if (el.kind === "freehand") {
+        drawSmoothedPath(ctx, pts);
+      } else {
+        ctx.moveTo(pts[0]![0], pts[0]![1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i]![0], pts[i]![1]);
+      }
+      ctx.stroke();
+    }
+
+    if (el.kind === "arrow" && el.arrowHeadPx > 0) {
+      drawArrowHead(ctx, pts[pts.length - 2]!, pts[pts.length - 1]!, el.arrowHeadPx);
+    }
+  });
+}
+
+/**
+ * Dispatch a single element to its drawing routine. `image`, `barcode`, `qr`,
+ * and any unrecognised kind are reserved / unimplemented and are skipped
+ * silently, matching the pre-shapes behaviour.
+ */
+function drawElement(ctx: Ctx2D, el: Element): void {
+  if (isTextElement(el)) {
+    drawTextElement(ctx, el);
+  } else if (el.kind === "rect") {
+    drawRectElement(ctx, el);
+  } else if (el.kind === "ellipse") {
+    drawEllipseElement(ctx, el);
+  } else if (isPolylineElement(el)) {
+    drawPolylineElement(ctx, el);
+  }
 }
 
 /**
@@ -186,10 +388,7 @@ export async function rasterizeDocument(
   ctx.fillRect(0, 0, geometry.widthPx, geometry.heightPx);
 
   for (const el of doc.elements) {
-    if (isTextElement(el)) {
-      drawTextElement(ctx, el);
-    }
-    // Other kinds are reserved for future implementation; skip silently.
+    drawElement(ctx, el);
   }
 
   const imageData = ctx.getImageData(0, 0, geometry.widthPx, geometry.heightPx);
