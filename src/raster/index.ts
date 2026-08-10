@@ -5,16 +5,20 @@
 
 import {
   domCanvasFactory,
+  domImageDecoder,
   type CanvasFactory,
   type Ctx2D,
+  type DecodedImage,
   type ImageDecoder,
 } from "../core/canvas.ts";
 import {
+  isImageElement,
   isPolylineElement,
   isTextElement,
   type Element,
   type ElementBase,
   type EllipseElement,
+  type ImageElement,
   type LabelDocument,
   type PolylineElement,
   type RectElement,
@@ -357,11 +361,143 @@ function drawPolylineElement(ctx: Ctx2D, el: PolylineElement): void {
 }
 
 /**
- * Dispatch a single element to its drawing routine. `image`, `barcode`, `qr`,
- * and any unrecognised kind are reserved / unimplemented and are skipped
- * silently, matching the pre-shapes behaviour.
+ * Perceptual luminance of a pixel, alpha-composited against white. Shared
+ * between `thresholdImageData` and the per-image halftoning below so both
+ * treat transparency identically.
  */
-function drawElement(ctx: Ctx2D, el: Element): void {
+function pixelLuminance(rgba: Uint8ClampedArray, i: number): number {
+  const r = rgba[i]!;
+  const g = rgba[i + 1]!;
+  const b = rgba[i + 2]!;
+  const a = rgba[i + 3]!;
+  const alpha = a / 255;
+  const rc = r * alpha + 255 * (1 - alpha);
+  const gc = g * alpha + 255 * (1 - alpha);
+  const bc = b * alpha + 255 * (1 - alpha);
+  return 0.299 * rc + 0.587 * gc + 0.114 * bc;
+}
+
+/**
+ * Floyd-Steinberg error diffusion. Quantises `lum` (raster order, one entry
+ * per pixel) to 0/255 in place semantics, writing a black/white mask.
+ * Pure black/white input has zero quantisation error at every pixel, so
+ * nothing is pushed to neighbours and the input survives unchanged -- no
+ * special-casing needed for that guarantee.
+ */
+function floydSteinbergDither(
+  lum: Float64Array,
+  width: number,
+  height: number,
+  threshold: number,
+  mask: Uint8Array,
+): void {
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const old = lum[idx]!;
+      const isBlack = old <= threshold;
+      mask[idx] = isBlack ? 1 : 0;
+      const err = old - (isBlack ? 0 : 255);
+      if (err === 0) continue;
+
+      if (x + 1 < width) lum[idx + 1] = lum[idx + 1]! + (err * 7) / 16;
+      if (y + 1 < height) {
+        if (x - 1 >= 0) lum[idx - 1 + width] = lum[idx - 1 + width]! + (err * 3) / 16;
+        lum[idx + width] = lum[idx + width]! + (err * 5) / 16;
+        if (x + 1 < width) lum[idx + 1 + width] = lum[idx + 1 + width]! + (err * 1) / 16;
+      }
+    }
+  }
+}
+
+/**
+ * Reduce RGBA pixels of an on-label-sized image to a black/white mask,
+ * applying the per-image threshold, halftone mode, and invert. This is what
+ * makes the document-level threshold pass a no-op for image pixels: they are
+ * already pure black or pure white by the time they land on the main canvas.
+ */
+function computeHalftoneMask(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  el: ImageElement,
+): Uint8Array {
+  const n = width * height;
+  const lum = new Float64Array(n);
+  for (let p = 0; p < n; p++) lum[p] = pixelLuminance(rgba, p * 4);
+
+  const mask = new Uint8Array(n);
+  if (el.halftone === "dither") {
+    floydSteinbergDither(lum, width, height, el.threshold, mask);
+  } else {
+    for (let p = 0; p < n; p++) mask[p] = lum[p]! <= el.threshold ? 1 : 0;
+  }
+
+  if (el.invert) {
+    for (let p = 0; p < n; p++) mask[p] = mask[p] ? 0 : 1;
+  }
+
+  return mask;
+}
+
+function drawImageElement(
+  ctx: Ctx2D,
+  el: ImageElement,
+  decoded: DecodedImage,
+  createCanvas: CanvasFactory,
+): void {
+  // A failed decode costs only this element: render nothing for it.
+  if (decoded === undefined) return;
+
+  withElementBox(ctx, el, (widthPx, heightPx) => {
+    if (widthPx <= 0 || heightPx <= 0) return;
+
+    const w = Math.max(1, Math.round(widthPx));
+    const h = Math.max(1, Math.round(heightPx));
+
+    // Render the source image at its on-label pixel size so halftoning
+    // operates at the resolution it will actually print at.
+    const srcCanvas = createCanvas(w, h);
+    const srcCtx = srcCanvas.getContext("2d");
+    if (!srcCtx) return;
+    srcCtx.drawImage(decoded, 0, 0, w, h);
+    const { data } = srcCtx.getImageData(0, 0, w, h);
+
+    const mask = computeHalftoneMask(data, w, h, el);
+
+    // Paint the mask onto a second offscreen canvas as hard black on a
+    // transparent background, then composite that onto the main canvas.
+    // Transparent pixels fall back to whatever is already there (white),
+    // which is exactly what "clear" would have given us -- Ctx2D has no
+    // clearRect/putImageData, so this reuses the primitives every other
+    // element already relies on.
+    const outCanvas = createCanvas(w, h);
+    const outCtx = outCanvas.getContext("2d");
+    if (!outCtx) return;
+    outCtx.fillStyle = "#000000";
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (mask[y * w + x]) outCtx.fillRect(x, y, 1, 1);
+      }
+    }
+
+    ctx.drawImage(
+      outCanvas as unknown as DecodedImage,
+      -widthPx / 2,
+      -heightPx / 2,
+      widthPx,
+      heightPx,
+    );
+  });
+}
+
+/** Dispatch a single element to its drawing routine. */
+function drawElement(
+  ctx: Ctx2D,
+  el: Element,
+  images: ReadonlyMap<string, DecodedImage>,
+  createCanvas: CanvasFactory,
+): void {
   if (isTextElement(el)) {
     drawTextElement(ctx, el);
   } else if (el.kind === "rect") {
@@ -370,6 +506,8 @@ function drawElement(ctx: Ctx2D, el: Element): void {
     drawEllipseElement(ctx, el);
   } else if (isPolylineElement(el)) {
     drawPolylineElement(ctx, el);
+  } else if (isImageElement(el)) {
+    drawImageElement(ctx, el, images.get(el.id), createCanvas);
   }
 }
 
@@ -386,6 +524,22 @@ export async function rasterizeDocument(
 ): Promise<MonoRaster> {
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
   const createCanvas = options?.createCanvas ?? domCanvasFactory;
+  const decodeImage = options?.decodeImage ?? domImageDecoder;
+
+  // Decoding is async; drawing is not (Ctx2D is synchronous). Resolve every
+  // image up front into a Map keyed by element id, then run the drawing pass
+  // synchronously below. A decode failure is caught per-element so one broken
+  // image can't throw and take down the whole label.
+  const images = new Map<string, DecodedImage>();
+  await Promise.all(
+    doc.elements.filter(isImageElement).map(async (el) => {
+      try {
+        images.set(el.id, await decodeImage(el.src));
+      } catch {
+        // Left unset: drawImageElement treats a missing entry as "render nothing".
+      }
+    }),
+  );
 
   const canvas = createCanvas(geometry.widthPx, geometry.heightPx);
   const ctx = canvas.getContext("2d");
@@ -395,7 +549,7 @@ export async function rasterizeDocument(
   ctx.fillRect(0, 0, geometry.widthPx, geometry.heightPx);
 
   for (const el of doc.elements) {
-    drawElement(ctx, el);
+    drawElement(ctx, el, images, createCanvas);
   }
 
   const imageData = ctx.getImageData(0, 0, geometry.widthPx, geometry.heightPx);
