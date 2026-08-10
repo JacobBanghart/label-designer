@@ -43,29 +43,43 @@ lsusb | grep -i printer
 # Bus 003 Device 004: ID 09c5:0588 Memory Corp. Printer
 ```
 
+Two things have to be true: `usblp` must not hold the interface, **and** your
+user must be able to open the raw device. The second one is easy to miss — the
+node is `root:lp` mode 0664, so a normal user gets read-only access and the
+browser fails to claim it with the same error as if the driver still held it.
+
 Create `/etc/udev/rules.d/99-label-designer.rules`, substituting your ids:
 
 ```udev
-# Keep usblp off this printer so a browser can claim it, and let your user open it.
-ATTRS{idVendor}=="09c5", ATTRS{idProduct}=="0588", ENV{libsane_matched}="yes"
-SUBSYSTEM=="usb", ATTRS{idVendor}=="09c5", ATTRS{idProduct}=="0588", MODE="0660", GROUP="plugdev"
-ACTION=="add", SUBSYSTEM=="usb", ATTRS{idVendor}=="09c5", ATTRS{idProduct}=="0588", \
-  RUN+="/bin/sh -c 'echo -n $kernel > /sys/bus/usb/drivers/usblp/unbind || true'"
+# Detach the printer from usblp so a browser can claim the interface.
+ACTION=="add|bind", SUBSYSTEM=="usb", DEVTYPE=="usb_interface", DRIVERS=="usblp", \
+  ATTRS{idVendor}=="09c5", ATTRS{idProduct}=="0588", \
+  RUN+="/bin/sh -c 'echo -n %k > /sys/bus/usb/drivers/usblp/unbind'"
+
+# Grant the logged-in user access to the raw device.
+# uaccess uses a systemd ACL, so it needs no group membership and no re-login.
+# Do NOT use GROUP="plugdev" -- that group does not exist on many distros
+# (Arch among them), and the rule silently does nothing.
+SUBSYSTEM=="usb", DEVTYPE=="usb_device", \
+  ATTRS{idVendor}=="09c5", ATTRS{idProduct}=="0588", TAG+="uaccess"
 ```
 
-Then:
+Then reload and replug the printer:
 
 ```sh
 sudo udevadm control --reload-rules
 sudo udevadm trigger
-# make sure you are in the group used above
-groups | grep -q plugdev || sudo usermod -aG plugdev "$USER"   # log out and back in
 ```
 
-Unplug and replug the printer. Confirm nothing holds it:
+Verify both conditions:
 
 ```sh
-ls /dev/usb/lp*        # should be gone for this device
+# 1. no kernel driver on the interface
+cat /sys/bus/usb/devices/3-1:1.0/driver 2>/dev/null || echo "released"
+
+# 2. you can write to the raw node
+node=$(lsusb -d 09c5:0588 | awk '{printf "/dev/bus/usb/%s/%s", $2, substr($4,1,3)}')
+[ -w "$node" ] && echo "writable" || echo "NOT writable"
 ```
 
 ### Just testing?
@@ -75,9 +89,12 @@ Detach once, without a permanent rule:
 ```sh
 # 3-1:1.0 is the device:interface from /sys/bus/usb/devices
 echo -n '3-1:1.0' | sudo tee /sys/bus/usb/drivers/usblp/unbind
+
+# and grant yourself access to the raw node for this session
+sudo setfacl -m "u:$USER:rw" "$(lsusb -d 09c5:0588 | awk '{printf "/dev/bus/usb/%s/%s", $2, substr($4,1,3)}')"
 ```
 
-It comes back on replug.
+Both revert on replug.
 
 ## macOS and Windows
 
@@ -108,8 +125,13 @@ They are stored per browser, not per label, because they describe your hardware.
 
 ## If it fails to connect
 
-_"Could not claim the printer"_ means the OS still holds it. Re-check the udev
-step and confirm `/dev/usb/lp*` is gone for that device.
+_"Could not claim the printer"_ has **two** causes that produce the identical
+error, and it is worth checking both:
+
+1. `usblp` still holds the interface — confirm `/dev/usb/lp*` is gone.
+2. You cannot write to `/dev/bus/usb/<bus>/<dev>` — it is `root:lp` mode 0664 by
+   default, so without the `uaccess` rule a normal user gets read-only access
+   and the claim fails exactly as if the driver were still attached.
 
 _No printer in the chooser_ means the browser sees no printer-class device.
 Check `lsusb`, and that you are using Chrome or Edge.
