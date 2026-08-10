@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { createCanvas } from "@napi-rs/canvas";
 
-import { getPixel } from "../core/raster.ts";
+import { getPixel, type MonoRaster } from "../core/raster.ts";
 import type { CanvasFactory, CanvasLike } from "../core/canvas.ts";
 import { SCHEMA_VERSION, type LabelDocument, type TextElement } from "../core/document.ts";
 import { DPI } from "../core/units.ts";
@@ -43,6 +43,7 @@ function textDoc(overrides: Partial<TextElement>): LabelDocument {
         bold: false,
         italic: false,
         align: "left",
+        verticalAlign: "top",
         ...overrides,
       },
     ],
@@ -130,6 +131,7 @@ describe("rasterizeDocument: rotation geometry", () => {
       heightPx: 200,
       fontSizePx: 24,
       rotation: 0,
+      verticalAlign: "top",
       align: "left",
     });
     const rotated = textDoc({
@@ -139,6 +141,7 @@ describe("rasterizeDocument: rotation geometry", () => {
       widthPx: 40,
       heightPx: 200,
       fontSizePx: 24,
+      verticalAlign: "top",
       rotation: 90,
       align: "left",
     });
@@ -206,6 +209,7 @@ describe("long-token wrapping", () => {
           text: "20250903ku6pmv20250903ku6pmv",
           fontSizePx: 40,
           fontFamily: "sans-serif",
+          verticalAlign: "top",
           bold: false,
           italic: false,
           align: "left",
@@ -233,5 +237,66 @@ describe("long-token wrapping", () => {
       }
     }
     expect(inkInsideBox).toBeGreaterThan(0);
+  });
+});
+
+describe("vertical alignment", () => {
+  /** Row index of the topmost burned pixel, or -1. */
+  function firstInkRow(raster: MonoRaster): number {
+    for (let y = 0; y < raster.heightPx; y++) {
+      for (let x = 0; x < raster.widthPx; x++) if (getPixel(raster, x, y)) return y;
+    }
+    return -1;
+  }
+
+  const base = {
+    id: "t",
+    kind: "text" as const,
+    x: 10,
+    y: 10,
+    widthPx: 380,
+    heightPx: 180,
+    rotation: 0,
+    text: "Hi",
+    fontSizePx: 30,
+    fontFamily: "sans-serif",
+    bold: false,
+    italic: false,
+    align: "left" as const,
+  };
+
+  const docWith = (verticalAlign: "top" | "middle" | "bottom"): LabelDocument => ({
+    schemaVersion: SCHEMA_VERSION,
+    id: "va",
+    name: "va",
+    sizeId: "2x1",
+    orientation: "portrait",
+    dpi: DPI,
+    elements: [{ ...base, verticalAlign }],
+  });
+
+  it("places text lower as alignment moves down the box", async () => {
+    const top = await rasterizeDocument(docWith("top"), { createCanvas: nodeCanvas });
+    const middle = await rasterizeDocument(docWith("middle"), { createCanvas: nodeCanvas });
+    const bottom = await rasterizeDocument(docWith("bottom"), { createCanvas: nodeCanvas });
+
+    const t = firstInkRow(top);
+    const m = firstInkRow(middle);
+    const b = firstInkRow(bottom);
+
+    expect(t).toBeGreaterThanOrEqual(0);
+    expect(m).toBeGreaterThan(t);
+    expect(b).toBeGreaterThan(m);
+  });
+
+  it("keeps bottom-aligned text inside the box", async () => {
+    const raster = await rasterizeDocument(docWith("bottom"), { createCanvas: nodeCanvas });
+
+    // Box spans y 10..190; nothing should be burned below it.
+    for (let y = 191; y < raster.heightPx; y++) {
+      for (let x = 0; x < raster.widthPx; x++) {
+        expect(getPixel(raster, x, y)).toBe(false);
+      }
+    }
   });
 });

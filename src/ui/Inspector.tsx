@@ -5,7 +5,7 @@
  * step per focus, not one per keystroke.
  */
 
-import type { TextAlign, TextElement } from "../core/document.ts";
+import type { TextAlign, TextElement, VerticalAlign } from "../core/document.ts";
 import type { EditorAction } from "../editor/store.ts";
 
 interface Props {
@@ -15,6 +15,11 @@ interface Props {
 
 const FONTS = ["sans-serif", "serif", "monospace"];
 const ALIGNMENTS: TextAlign[] = ["left", "center", "right"];
+const VERTICAL: { value: VerticalAlign; label: string }[] = [
+  { value: "top", label: "Top" },
+  { value: "middle", label: "Middle" },
+  { value: "bottom", label: "Bottom" },
+];
 
 export function Inspector({ element, dispatch }: Props) {
   const update = (patch: Partial<TextElement>, transient = false) =>
@@ -82,6 +87,22 @@ export function Inspector({ element, dispatch }: Props) {
               onClick={() => update({ align })}
             >
               {align}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
+        <span>Vertical align</span>
+        <div className="segmented">
+          {VERTICAL.map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              className={element.verticalAlign === value ? "active" : ""}
+              onClick={() => update({ verticalAlign: value })}
+            >
+              {label}
             </button>
           ))}
         </div>

@@ -69,6 +69,7 @@ export function createTextElement(doc: LabelDocument, text = "Text"): TextElemen
     bold: false,
     italic: false,
     align: "left",
+    verticalAlign: "top",
   };
 }
 
@@ -285,17 +286,40 @@ export function setOrientation(doc: LabelDocument, orientation: Orientation): La
   if (orientation === doc.orientation) return doc;
   const from = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
 
+  /*
+   * Rotate each element's CENTRE about the label, and add a quarter turn to its
+   * own rotation. Do NOT also swap widthPx/heightPx.
+   *
+   * Rotation is applied about the element's centre, so bumping it by 90 degrees
+   * already transposes the visual footprint. Swapping the stored box as well
+   * cancels that out, leaving the footprint unchanged -- which was the old bug.
+   *
+   * Direction matters too. Going one way must be the inverse of going the other,
+   * or toggling orientation twice lands on a 180-degree rotation instead of
+   * where it started, and repeated toggles walk elements off the label. That was
+   * the other half of the bug.
+   */
+  const toLandscape = orientation === "landscape";
+
   return {
     ...doc,
     orientation,
-    elements: doc.elements.map((el) => ({
-      ...el,
-      x: from.heightPx - el.y - el.heightPx,
-      y: el.x,
-      widthPx: el.heightPx,
-      heightPx: el.widthPx,
-      rotation: (el.rotation + 90) % 360,
-    })),
+    elements: doc.elements.map((el) => {
+      const centreX = el.x + el.widthPx / 2;
+      const centreY = el.y + el.heightPx / 2;
+
+      // Clockwise into landscape, anticlockwise back into portrait.
+      const nextCentreX = toLandscape ? from.heightPx - centreY : centreY;
+      const nextCentreY = toLandscape ? centreX : from.widthPx - centreX;
+      const nextRotation = (((el.rotation + (toLandscape ? 90 : -90)) % 360) + 360) % 360;
+
+      return {
+        ...el,
+        x: Math.round(nextCentreX - el.widthPx / 2),
+        y: Math.round(nextCentreY - el.heightPx / 2),
+        rotation: nextRotation,
+      };
+    }),
   };
 }
 

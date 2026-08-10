@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { SCHEMA_VERSION, type ShapeElement, type TextElement } from "../core/document.ts";
 import { resolveGeometry } from "../core/label.ts";
+import { boundingBox } from "./snapping.ts";
+import { outOfBoundsIds } from "./bounds.ts";
 import { amend, canRedo, canUndo, createHistory, push, redo, undo } from "./history.ts";
 import {
   addElement,
@@ -123,15 +125,54 @@ describe("operations", () => {
       expect(moved.y + moved.heightPx).toBeLessThanOrEqual(geometry.heightPx);
     });
 
-    it("swaps element dimensions and advances rotation by 90 degrees", () => {
+    it("advances rotation by 90 degrees WITHOUT swapping the stored box", () => {
+      // Rotation is about the centre, so a quarter turn already transposes the
+      // visual footprint. Swapping widthPx/heightPx as well cancels it out.
       const doc = createDocument("4x6", "portrait");
       const el = { ...createTextElement(doc), rotation: 0 };
       const rotated = setOrientation(addElement(doc, el), "landscape");
 
       const moved = rotated.elements[0]!;
-      expect(moved.widthPx).toBe(el.heightPx);
-      expect(moved.heightPx).toBe(el.widthPx);
+      expect(moved.widthPx).toBe(el.widthPx);
+      expect(moved.heightPx).toBe(el.heightPx);
       expect(moved.rotation).toBe(90);
+    });
+
+    it("actually transposes the visual footprint", () => {
+      const doc = createDocument("4x6", "portrait");
+      const el = { ...createTextElement(doc), rotation: 0 };
+      const before = boundingBox(el);
+      const after = boundingBox(setOrientation(addElement(doc, el), "landscape").elements[0]!);
+
+      expect(Math.round(after.right - after.left)).toBe(Math.round(before.bottom - before.top));
+      expect(Math.round(after.bottom - after.top)).toBe(Math.round(before.right - before.left));
+    });
+
+    it("is its own inverse: toggling twice returns to the start", () => {
+      // The old implementation used the same mapping both ways, so a round trip
+      // landed on a 180-degree rotation and repeated toggles walked elements
+      // off the label.
+      const doc = createDocument("4x6", "portrait");
+      const el = createTextElement(doc);
+      const start = addElement(doc, el);
+
+      const roundTrip = setOrientation(setOrientation(start, "landscape"), "portrait");
+
+      expect(roundTrip.elements[0]).toEqual(start.elements[0]);
+    });
+
+    it("keeps every element on the label across many toggles", () => {
+      const doc = createDocument("4x6", "portrait");
+      let current = addElement(doc, createTextElement(doc));
+      current = addElement(current, { ...createTextElement(current), id: "second", rotation: 45 });
+
+      for (let i = 0; i < 8; i++) {
+        current = setOrientation(
+          current,
+          current.orientation === "portrait" ? "landscape" : "portrait",
+        );
+        expect(outOfBoundsIds(current)).toEqual([]);
+      }
     });
 
     it("returns to the original layout after four rotations", () => {

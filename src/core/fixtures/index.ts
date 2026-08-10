@@ -91,6 +91,7 @@ export function simicOrderLabel(): LabelDocument {
         bold: false,
         italic: false,
         align: "left",
+        verticalAlign: "top",
       },
       {
         id: "el-order",
@@ -105,6 +106,7 @@ export function simicOrderLabel(): LabelDocument {
         bold: false,
         italic: false,
         align: "left",
+        verticalAlign: "top",
       },
     ],
   };

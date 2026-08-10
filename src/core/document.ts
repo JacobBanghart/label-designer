@@ -31,6 +31,8 @@ export interface ElementBase {
 }
 
 export type TextAlign = "left" | "center" | "right";
+/** Where wrapped lines sit within the element box's height. */
+export type VerticalAlign = "top" | "middle" | "bottom";
 
 export interface TextElement extends ElementBase {
   kind: "text";
@@ -41,6 +43,7 @@ export interface TextElement extends ElementBase {
   bold: boolean;
   italic: boolean;
   align: TextAlign;
+  verticalAlign: VerticalAlign;
 }
 
 /*

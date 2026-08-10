@@ -20,6 +20,7 @@ function text(overrides: Partial<TextElement> & { id: string }): TextElement {
     bold: false,
     italic: false,
     align: "left",
+    verticalAlign: "top",
     ...overrides,
   };
 }

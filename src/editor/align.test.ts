@@ -23,6 +23,7 @@ function text(id: string, x: number, y: number, w = 100, h = 50): TextElement {
     bold: false,
     italic: false,
     align: "left",
+    verticalAlign: "top",
   };
 }
 

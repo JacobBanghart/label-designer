@@ -188,7 +188,14 @@ function drawTextElement(ctx: Ctx2D, el: TextElement): void {
 
     // Local box coords, relative to the (now-translated) centre.
     const localLeft = -widthPx / 2;
-    const localTop = -heightPx / 2;
+    // Vertical alignment shifts the whole block within the box height. Text
+    // taller than its box overflows downward from the top either way, rather
+    // than being centred half-off both edges.
+    const blockHeight = lines.length * lineHeight;
+    const slack = Math.max(0, heightPx - blockHeight);
+    const localTop =
+      -heightPx / 2 +
+      (el.verticalAlign === "middle" ? slack / 2 : el.verticalAlign === "bottom" ? slack : 0);
 
     let drawX: number;
     if (el.align === "center") drawX = localLeft + widthPx / 2;

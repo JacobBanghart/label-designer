@@ -28,6 +28,18 @@ export function migrate(raw: unknown): LabelDocument | null {
   if (version > SCHEMA_VERSION) return null; // written by a newer build
 
   // v0 -> v1 was the introduction of schemaVersion itself; no field changes.
+  //
+  // verticalAlign was added later without a schema bump because its absence is
+  // unambiguous: "top" is exactly how those documents already rendered, so
+  // defaulting it changes nothing about existing labels.
+  const elements = doc.elements.map((el) =>
+    el &&
+    typeof el === "object" &&
+    (el as { kind?: string }).kind === "text" &&
+    (el as { verticalAlign?: unknown }).verticalAlign === undefined
+      ? ({ ...el, verticalAlign: "top" } as LabelDocument["elements"][number])
+      : (el as LabelDocument["elements"][number]),
+  );
   return {
     schemaVersion: SCHEMA_VERSION,
     id: doc.id,
@@ -35,7 +47,7 @@ export function migrate(raw: unknown): LabelDocument | null {
     sizeId,
     orientation,
     dpi: typeof doc.dpi === "number" && doc.dpi > 0 ? doc.dpi : DPI,
-    elements: doc.elements,
+    elements,
   };
 }
 

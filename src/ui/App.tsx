@@ -407,34 +407,43 @@ export function App() {
             onToolUsed={() => setTool(null)}
             dispatch={dispatch}
           />
-          {clippedIds.length > 0 && (
-            <div className="warning">
-              <span>
-                {clippedIds.length} element{clippedIds.length === 1 ? "" : "s"} extend
-                {clippedIds.length === 1 ? "s" : ""} past the label and will be cut off when
-                printed.
-              </span>
-              {/*
-                These buttons are the only handles on a strayed element: the
-                canvas is sized to the label, so anything lying fully outside it
-                cannot be clicked at all.
-              */}
-              <button
-                type="button"
-                onClick={() => dispatch({ type: "selectMany", ids: clippedIds })}
-              >
-                Select
-              </button>
-              <button
-                type="button"
-                onClick={() => dispatch({ type: "clampIntoBounds", ids: clippedIds })}
-              >
-                Move onto label
-              </button>
-            </div>
-          )}
-          {status && <p className="status">{status}</p>}
-          {saveError && <p className="error">{saveError}</p>}
+          {/*
+            Overlaid rather than stacked below the canvas. These messages appear
+            and disappear as you work, and in the flow they changed the measured
+            size of the stage area -- which recomputes the canvas scale and makes
+            the label visibly jump. An overlay cannot disturb the layout it
+            floats over.
+          */}
+          <div className="stage-messages">
+            {clippedIds.length > 0 && (
+              <div className="warning">
+                <span>
+                  {clippedIds.length} element{clippedIds.length === 1 ? "" : "s"} extend
+                  {clippedIds.length === 1 ? "s" : ""} past the label and will be cut off when
+                  printed.
+                </span>
+                {/*
+                  These buttons are the only handles on a strayed element: the
+                  canvas is sized to the label, so anything lying fully outside it
+                  cannot be clicked at all.
+                */}
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: "selectMany", ids: clippedIds })}
+                >
+                  Select
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dispatch({ type: "clampIntoBounds", ids: clippedIds })}
+                >
+                  Move onto label
+                </button>
+              </div>
+            )}
+            {status && <p className="status">{status}</p>}
+            {saveError && <p className="error">{saveError}</p>}
+          </div>
         </main>
 
         <aside className="sidebar">

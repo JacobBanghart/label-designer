@@ -530,6 +530,9 @@ function renderContent(element: Element) {
       <Text
         text={element.text}
         width={element.widthPx}
+        // Konva needs an explicit height for verticalAlign to mean anything.
+        height={element.heightPx}
+        verticalAlign={element.verticalAlign}
         fontSize={element.fontSizePx}
         fontFamily={element.fontFamily}
         fontStyle={fontStyle || "normal"}
