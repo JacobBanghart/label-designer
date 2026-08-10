@@ -20,9 +20,12 @@ import {
 
 interface Props {
   onConnectedChange: (connected: boolean) => void;
+  /** Prints a calibration label with the settings as they currently stand. */
+  onTestPrint: () => Promise<string | null>;
 }
 
-export function PrinterPanel({ onConnectedChange }: Props) {
+export function PrinterPanel({ onConnectedChange, onTestPrint }: Props) {
+  const [testing, setTesting] = useState(false);
   const [device, setDevice] = useState<USBDevice | null>(null);
   const [settings, setSettings] = useState<TsplSettings>(() => loadTsplSettings());
   const [error, setError] = useState<string | null>(null);
@@ -86,6 +89,25 @@ export function PrinterPanel({ onConnectedChange }: Props) {
 
       {device && (
         <>
+          <div className="field">
+            <span>Direction</span>
+            <div className="segmented">
+              {([0, 1] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={settings.direction === value ? "active" : ""}
+                  onClick={() => update({ direction: value })}
+                >
+                  {value === 0 ? "Normal" : "Flipped"}
+                </button>
+              ))}
+            </div>
+            {/* This is the setting that was unreachable through the print
+                dialog and made 2x1 stock print upside down. */}
+            <p className="hint">Use Flipped if labels come out upside down.</p>
+          </div>
+
           <div className="field-row">
             <label className="field">
               <span>Darkness (0&ndash;15)</span>
@@ -107,25 +129,6 @@ export function PrinterPanel({ onConnectedChange }: Props) {
                 onChange={(event) => update({ speed: Number(event.target.value) })}
               />
             </label>
-          </div>
-
-          <div className="field">
-            <span>Direction</span>
-            <div className="segmented">
-              {([0, 1] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={settings.direction === value ? "active" : ""}
-                  onClick={() => update({ direction: value })}
-                >
-                  {value === 0 ? "Normal" : "Flipped"}
-                </button>
-              ))}
-            </div>
-            {/* This is the setting that was unreachable through the print
-                dialog and made 2x1 stock print upside down. */}
-            <p className="hint">Use Flipped if labels come out upside down.</p>
           </div>
 
           <div className="field-row">
@@ -164,6 +167,28 @@ export function PrinterPanel({ onConnectedChange }: Props) {
               onChange={(event) => update({ gapMm: Number(event.target.value) })}
             />
           </label>
+
+          {/*
+            Adjusting a printer blind is miserable: every setting here is only
+            verifiable by looking at a physical label. This keeps the loop to
+            one click.
+          */}
+          <button
+            type="button"
+            className="primary"
+            disabled={testing}
+            onClick={async () => {
+              setTesting(true);
+              setError(await onTestPrint());
+              setTesting(false);
+            }}
+          >
+            {testing ? "Printing..." : "Print test label"}
+          </button>
+          <p className="hint">
+            Prints a label with TOP at the top and an arrow pointing right. If TOP is at the bottom,
+            switch Direction. If the corner ticks sit unevenly, adjust the offsets.
+          </p>
 
           <button
             type="button"

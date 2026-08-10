@@ -10,8 +10,14 @@
  * nothing to the bundle.
  */
 
-import type { ImageElement, LabelDocument } from "../core/document.ts";
-import { resolveGeometry } from "../core/label.ts";
+import {
+  SCHEMA_VERSION,
+  type Element,
+  type ImageElement,
+  type LabelDocument,
+} from "../core/document.ts";
+import { resolveGeometry, type LabelSizeId, type Orientation } from "../core/label.ts";
+import { DPI } from "../core/units.ts";
 import { nextId } from "./operations.ts";
 
 /** Number of discrete patches in the step wedge. */
@@ -79,5 +85,89 @@ export function createTestPatternElement(doc: LabelDocument): ImageElement | nul
     halftone: "dither",
     threshold: 128,
     invert: false,
+  };
+}
+
+/**
+ * A calibration label for tuning a directly-connected printer.
+ *
+ * Deliberately asymmetric in both axes: you cannot tell a 180-degree flip from
+ * a correct print if the artwork is symmetric, which is exactly the mistake
+ * that makes rotation problems hard to diagnose.
+ *
+ *   - "TOP" sits against the top edge, so a flip is unmistakable
+ *   - an arrow runs left to right, so a mirror is unmistakable
+ *   - corner ticks at a known inset show registration offset
+ *   - a small tonal ramp shows whether darkness is in a usable range
+ */
+export function createAlignmentDoc(sizeId: LabelSizeId, orientation: Orientation): LabelDocument {
+  const geometry = resolveGeometry(sizeId, orientation, DPI);
+  const { widthPx: W, heightPx: H, dpi } = geometry;
+  const inset = Math.round(dpi * 0.1);
+  const tick = Math.max(2, Math.round(dpi * 0.012));
+  const arm = Math.round(dpi * 0.22);
+  const font = Math.max(14, Math.round(Math.min(W, H) * 0.13));
+
+  const solid = (id: string, x: number, y: number, w: number, h: number): Element => ({
+    id,
+    kind: "rect",
+    x,
+    y,
+    widthPx: Math.max(1, Math.round(w)),
+    heightPx: Math.max(1, Math.round(h)),
+    rotation: 0,
+    strokeWidthPx: 0,
+    filled: true,
+    cornerRadiusPx: 0,
+  });
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    id: nextId("doc"),
+    name: "Printer alignment",
+    sizeId,
+    orientation,
+    dpi,
+    elements: [
+      // Bar hard against the top edge: the single clearest flip indicator.
+      solid("topbar", 0, 0, W, Math.round(dpi * 0.05)),
+      {
+        id: "top",
+        kind: "text",
+        x: inset,
+        y: Math.round(dpi * 0.09),
+        widthPx: W - inset * 2,
+        heightPx: font * 1.4,
+        rotation: 0,
+        text: "TOP",
+        fontSizePx: font,
+        fontFamily: "sans-serif",
+        bold: true,
+        italic: false,
+        align: "center",
+        verticalAlign: "top",
+      },
+      {
+        id: "arrow",
+        kind: "arrow",
+        x: inset,
+        y: Math.round(H * 0.55),
+        widthPx: W - inset * 2 - arm,
+        heightPx: 0,
+        rotation: 0,
+        strokeWidthPx: Math.max(2, Math.round(dpi * 0.02)),
+        points: [0, 0.5, 1, 0.5],
+        arrowHeadPx: Math.round(dpi * 0.09),
+      },
+      // Corner ticks at a known inset, for reading registration offset.
+      solid("c1h", inset, inset, arm, tick),
+      solid("c1v", inset, inset, tick, arm),
+      solid("c2h", W - inset - arm, inset, arm, tick),
+      solid("c2v", W - inset - tick, inset, tick, arm),
+      solid("c3h", inset, H - inset - tick, arm, tick),
+      solid("c3v", inset, H - inset - arm, tick, arm),
+      solid("c4h", W - inset - arm, H - inset - tick, arm, tick),
+      solid("c4v", W - inset - tick, H - inset - arm, tick, arm),
+    ],
   };
 }

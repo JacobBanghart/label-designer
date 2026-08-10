@@ -20,7 +20,7 @@ import { rasterizeDocument } from "../raster/index.ts";
 import { importJson } from "../storage/local.ts";
 import { exportJson, exportPdf, exportPng } from "../editor/exporters.ts";
 import { createImageElement, readImageFile } from "../editor/importImage.ts";
-import { createTestPatternElement } from "../editor/testPattern.ts";
+import { createAlignmentDoc, createTestPatternElement } from "../editor/testPattern.ts";
 import {
   loadActive,
   loadLibrary,
@@ -588,7 +588,21 @@ export function App() {
             </div>
           )}
 
-          <PrinterPanel onConnectedChange={setUsbConnected} />
+          <PrinterPanel
+            onConnectedChange={setUsbConnected}
+            onTestPrint={async () => {
+              const transport = getTransport("webusb");
+              if (!transport) return "Direct USB transport unavailable.";
+              try {
+                const alignment = createAlignmentDoc(doc.sizeId, doc.orientation);
+                const raster = await rasterizeDocument(alignment);
+                const result = await transport.print(raster, { copies: 1 });
+                return result.ok ? null : (result.message ?? "Test print failed.");
+              } catch (err) {
+                return err instanceof Error ? err.message : String(err);
+              }
+            }}
+          />
 
           <LibraryPanel
             library={library}
