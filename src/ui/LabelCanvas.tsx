@@ -29,19 +29,10 @@ import { boundingBox, computeSnap, type Guide } from "../editor/snapping.ts";
 const SNAP_SCREEN_PX = 7;
 
 /**
- * Working space around the label, in label pixels.
- *
- * The stage used to be exactly the label size, so a pointer outside it produced
- * no events at all: you could not start a drag off the label, and a drag that
- * left it simply stopped. Padding gives the gestures somewhere to live, the way
- * a drawing program has canvas around its artboard.
- *
- * Proportional so it stays usable on a 2x1 as well as a 4x6, with a floor so
- * tiny labels still get a real margin.
+ * Breathing room kept around the label when it is scaled to fit, in screen px.
+ * Only used to compute the fit scale; the drawable area is the whole panel.
  */
-export function workspacePadding(widthPx: number, heightPx: number): number {
-  return Math.max(60, Math.round(Math.min(widthPx, heightPx) * 0.35));
-}
+export const FIT_MARGIN_PX = 48;
 
 /** null means the select/move tool. */
 export type Tool = ShapeKind | null;
@@ -55,6 +46,12 @@ interface Props {
   editingId: string | null;
   onEditStart: (id: string) => void;
   scale: number;
+  /** Stage size in SCREEN pixels. The stage fills the panel, not just the label. */
+  stageWidth: number;
+  stageHeight: number;
+  /** Where the label sits within the stage, in LABEL pixels. */
+  offsetX: number;
+  offsetY: number;
   tool: Tool;
   onToolUsed: () => void;
   dispatch: (action: EditorAction) => void;
@@ -67,12 +64,15 @@ export function LabelCanvas({
   editingId,
   onEditStart,
   scale,
+  stageWidth,
+  stageHeight,
+  offsetX,
+  offsetY,
   tool,
   onToolUsed,
   dispatch,
 }: Props) {
   const geometry = resolveGeometry(doc.sizeId, doc.orientation, doc.dpi);
-  const pad = workspacePadding(geometry.widthPx, geometry.heightPx);
   const transformerRef = useRef<Konva.Transformer>(null);
   const layerRef = useRef<Konva.Layer>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -160,8 +160,9 @@ export function LabelCanvas({
     const stage = stageRef.current;
     const position = stage?.getPointerPosition();
     if (!position) return null;
-    // Stage coords include the workspace padding; label space does not.
-    return [position.x / scale - pad, position.y / scale - pad];
+    // Stage coordinates include the offset that centres the label; label space
+    // does not. Everything outside this function works in label coordinates.
+    return [position.x / scale - offsetX, position.y / scale - offsetY];
   }
 
   function handleDrawStart() {
@@ -217,8 +218,8 @@ export function LabelCanvas({
   return (
     <Stage
       ref={stageRef}
-      width={(geometry.widthPx + pad * 2) * scale}
-      height={(geometry.heightPx + pad * 2) * scale}
+      width={stageWidth}
+      height={stageHeight}
       scaleX={scale}
       scaleY={scale}
       onMouseDown={(event) => {
@@ -249,6 +250,39 @@ export function LabelCanvas({
         handleDrawEnd();
         setMarquee(null);
       }}
+      onWheel={(event) => {
+        /*
+         * Wheel over a selected text element resizes its type.
+         *
+         * Deliberately narrow: it only fires when exactly one text element is
+         * selected AND the pointer is over it. Hijacking the wheel any more
+         * broadly would steal scrolling from a zoomed-in canvas, which is the
+         * other thing the wheel is for here.
+         */
+        if (selectedIds.length !== 1) return;
+        const element = doc.elements.find((el) => el.id === selectedIds[0]);
+        if (!element || !isTextElement(element)) return;
+
+        const point = pointerInLabelSpace();
+        if (!point) return;
+        const box = boundingBox(element);
+        const inside =
+          point[0] >= box.left &&
+          point[0] <= box.right &&
+          point[1] >= box.top &&
+          point[1] <= box.bottom;
+        if (!inside) return;
+
+        event.evt.preventDefault();
+        // Proportional so big type changes fast and small type stays adjustable.
+        const step = Math.max(1, Math.round(element.fontSizePx * 0.06));
+        const delta = event.evt.deltaY < 0 ? step : -step;
+        dispatch({
+          type: "update",
+          id: element.id,
+          patch: { fontSizePx: Math.max(4, element.fontSizePx + delta) },
+        });
+      }}
       onTouchStart={handleDrawStart}
       onTouchMove={handleDrawMove}
       onTouchEnd={handleDrawEnd}
@@ -261,7 +295,7 @@ export function LabelCanvas({
       <Layer ref={layerRef}>
         {/* Shifted so label coordinates stay label coordinates everywhere else:
             only this one Group knows about the workspace padding. */}
-        <Group x={pad} y={pad}>
+        <Group x={offsetX} y={offsetY}>
           {/* The label surface. Anything outside it will not print. */}
           <Rect
             x={0}

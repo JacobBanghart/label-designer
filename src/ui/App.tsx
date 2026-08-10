@@ -33,7 +33,7 @@ import {
 } from "../storage/library.ts";
 import { useAutosave, type AutosaveResult } from "../storage/useAutosave.ts";
 import { Inspector } from "./Inspector.tsx";
-import { LabelCanvas, workspacePadding, type Tool } from "./LabelCanvas.tsx";
+import { FIT_MARGIN_PX, LabelCanvas, type Tool } from "./LabelCanvas.tsx";
 import { ShapeInspector } from "./ShapeInspector.tsx";
 import { ImageInspector } from "./ImageInspector.tsx";
 import { MultiInspector } from "./MultiInspector.tsx";
@@ -46,8 +46,6 @@ import { useElementSize } from "./useElementSize.ts";
 import { useDisplayUnit } from "./useDisplayUnit.ts";
 import { DISPLAY_UNITS, type DisplayUnit } from "../core/units.ts";
 
-/** Breathing room around the label inside the stage area, in CSS pixels. */
-const CANVAS_MARGIN = 48;
 /** Drawing tools, in toolbar order. Each is drag-to-draw on the canvas. */
 const TOOLS = [
   { kind: "rect", label: "Rect", hint: "Rectangle (R) -- drag on the label" },
@@ -66,6 +64,11 @@ const TOOL_KEYS: Record<string, Tool> = {
   a: "arrow",
   p: "freehand",
 };
+
+/** Keep zoom steps tidy so the readout does not show 63.7%. */
+function roundZoom(value: number): number {
+  return Math.round(value * 100) / 100;
+}
 
 /** Used for the first paint, before the ResizeObserver has measured. */
 const FALLBACK_SCALE = 0.4;
@@ -96,6 +99,7 @@ export function App() {
   const [previewExpanded, setPreviewExpanded] = useState(false);
   const [unit, setUnit] = useDisplayUnit();
   const [usbConnected, setUsbConnected] = useState(false);
+  const [zoom, setZoom] = useState<number | "fit">("fit");
   const [library, setLibrary] = useState<Library>(() => loadLibrary());
 
   /*
@@ -189,20 +193,26 @@ export function App() {
     return found && isTextElement(found) ? found : null;
   }, [doc, editingId]);
 
-  // Fit the WORKSPACE -- label plus the padding that gestures need -- to the
-  // room available. Fitting the label alone would push the padding off-screen,
-  // which is where the off-label part of a drag has to happen.
-  const pad = workspacePadding(geometry.widthPx, geometry.heightPx);
-  const workspaceWidth = geometry.widthPx + pad * 2;
-  const workspaceHeight = geometry.heightPx + pad * 2;
-
-  // Capped at 1:1 so a small label on a big screen is not blown up past its real
-  // resolution, which would just show interpolation artefacts.
-  const scale = Math.min(
+  /*
+   * The stage fills the whole panel, with the label centred inside it as an
+   * artboard. Sizing the stage to the label meant a pointer outside it produced
+   * no events at all, and any fixed padding is an arbitrary guess about how far
+   * outside a gesture might go. The whole panel is the drawable area.
+   */
+  const fitScale = Math.min(
     1,
-    stageSize.width > 0 ? (stageSize.width - CANVAS_MARGIN) / workspaceWidth : FALLBACK_SCALE,
-    stageSize.height > 0 ? (stageSize.height - CANVAS_MARGIN) / workspaceHeight : FALLBACK_SCALE,
+    stageSize.width > 0 ? (stageSize.width - FIT_MARGIN_PX) / geometry.widthPx : FALLBACK_SCALE,
+    stageSize.height > 0 ? (stageSize.height - FIT_MARGIN_PX) / geometry.heightPx : FALLBACK_SCALE,
   );
+
+  const scale = zoom === "fit" ? fitScale : zoom;
+
+  // Grow past the panel when zoomed in so the container scrolls; fill it exactly
+  // when the label is smaller, so every visible pixel accepts a gesture.
+  const stageWidth = Math.max(stageSize.width, geometry.widthPx * scale + FIT_MARGIN_PX);
+  const stageHeight = Math.max(stageSize.height, geometry.heightPx * scale + FIT_MARGIN_PX);
+  const offsetX = (stageWidth / scale - geometry.widthPx) / 2;
+  const offsetY = (stageHeight / scale - geometry.heightPx) / 2;
 
   /*
    * Switching labels autosaves first (the effect above already wrote the
@@ -354,16 +364,6 @@ export function App() {
           >
             Image
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              const element = createTestPatternElement(doc);
-              if (element) dispatch({ type: "addElement", element });
-            }}
-            title="Add a gradient and step wedge for checking 1-bit output"
-          >
-            Test pattern
-          </button>
           {TOOLS.map(({ kind, label, hint }) => (
             <button
               key={kind}
@@ -378,7 +378,24 @@ export function App() {
         </div>
 
         <div className="group right">
+          {/* Occasional utilities, kept out of the tool row so the tools used
+              constantly stay in one uninterrupted group. */}
           <ExportMenu
+            label="More"
+            actions={[
+              {
+                id: "testpattern",
+                label: "Test pattern",
+                hint: "Tonal ramp and step wedge for checking 1-bit output",
+                run: () => {
+                  const element = createTestPatternElement(doc);
+                  if (element) dispatch({ type: "addElement", element });
+                },
+              },
+            ]}
+          />
+          <ExportMenu
+            label="Export"
             actions={[
               {
                 id: "pdf",
@@ -485,10 +502,7 @@ export function App() {
             Wrapper sized to the scaled label so the inline text editor can be
             absolutely positioned over the exact Konva coordinates.
           */}
-          <div
-            className="stage-canvas"
-            style={{ width: workspaceWidth * scale, height: workspaceHeight * scale }}
-          >
+          <div className="stage-canvas" style={{ width: stageWidth, height: stageHeight }}>
             <LabelCanvas
               doc={doc}
               selectedIds={selectedIds}
@@ -499,6 +513,10 @@ export function App() {
                 setEditingId(id);
               }}
               scale={scale}
+              stageWidth={stageWidth}
+              stageHeight={stageHeight}
+              offsetX={offsetX}
+              offsetY={offsetY}
               tool={tool}
               onToolUsed={() => setTool(null)}
               dispatch={dispatch}
@@ -507,7 +525,8 @@ export function App() {
               <InlineTextEditor
                 element={editingElement}
                 scale={scale}
-                offsetPx={pad}
+                offsetX={offsetX}
+                offsetY={offsetY}
                 onChange={(text) =>
                   dispatch({
                     type: "update",
@@ -519,6 +538,31 @@ export function App() {
                 onCommit={() => setEditingId(null)}
               />
             )}
+          </div>
+
+          <div className="zoom-controls">
+            <button
+              type="button"
+              onClick={() => setZoom(Math.max(0.1, roundZoom(scale / 1.25)))}
+              title="Zoom out"
+            >
+              &minus;
+            </button>
+            <button
+              type="button"
+              className="zoom-value"
+              onClick={() => setZoom("fit")}
+              title="Fit the label to the panel"
+            >
+              {zoom === "fit" ? "Fit" : `${Math.round(scale * 100)}%`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom(Math.min(8, roundZoom(scale * 1.25)))}
+              title="Zoom in"
+            >
+              +
+            </button>
           </div>
 
           {/*

@@ -559,3 +559,35 @@ input[type="number"] {
   padding: 3px 10px;
   font-size: 12px;
 }
+
+/* ---- zoom controls ---- */
+
+.zoom-controls {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+  box-shadow: 0 2px 8px rgba(20, 22, 26, 0.1);
+  z-index: 5;
+}
+
+.zoom-controls button {
+  border: none;
+  background: none;
+  padding: 4px 9px;
+  border-radius: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.zoom-controls button:hover {
+  background: #f2f1ff;
+}
+
+.zoom-controls .zoom-value {
+  min-width: 52px;
+}

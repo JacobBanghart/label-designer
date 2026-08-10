@@ -82,6 +82,7 @@ accumulates rounding drift.
 | `Ctrl/Cmd+D`                      | Duplicate selection       |
 | `Delete` / `Backspace`            | Delete selection          |
 | `Escape`                          | Deselect                  |
+| Scroll over selected text         | Resize the type           |
 | Arrow keys                        | Nudge by one device pixel |
 | `Shift` + arrows                  | Nudge by ten              |
 | `V`                               | Select/move tool          |

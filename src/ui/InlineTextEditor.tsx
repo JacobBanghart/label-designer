@@ -18,13 +18,14 @@ interface Props {
   element: TextElement;
   /** Display scale of the canvas, to convert label px to screen px. */
   scale: number;
-  /** Workspace padding around the label, in label px, that the canvas adds. */
-  offsetPx: number;
+  /** Where the label sits within the stage, in label px. */
+  offsetX: number;
+  offsetY: number;
   onChange: (text: string) => void;
   onCommit: () => void;
 }
 
-export function InlineTextEditor({ element, scale, offsetPx, onChange, onCommit }: Props) {
+export function InlineTextEditor({ element, scale, offsetX, offsetY, onChange, onCommit }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
 
   useLayoutEffect(() => {
@@ -73,8 +74,8 @@ export function InlineTextEditor({ element, scale, offsetPx, onChange, onCommit 
       style={{
         // Positioned in unscaled label coordinates, then scaled as a whole, so
         // the text lines up with the Konva rendering at any zoom.
-        left: (element.x + offsetPx) * scale,
-        top: (element.y + offsetPx) * scale,
+        left: (element.x + offsetX) * scale,
+        top: (element.y + offsetY) * scale,
         width: element.widthPx * scale,
         height: element.heightPx * scale,
         fontSize: element.fontSizePx * scale,

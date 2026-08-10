@@ -16,10 +16,11 @@ export interface ExportAction {
 }
 
 interface Props {
+  label: string;
   actions: readonly ExportAction[];
 }
 
-export function ExportMenu({ actions }: Props) {
+export function ExportMenu({ label, actions }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -50,7 +51,7 @@ export function ExportMenu({ actions }: Props) {
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        Export ▾
+        {label} ▾
       </button>
 
       {open && (
